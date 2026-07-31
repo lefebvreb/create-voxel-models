@@ -1,3 +1,4 @@
-from voxels import sum
+from voxels import Scene
 
-print(sum(1, 2))
+s = Scene()
+print(s)

@@ -1,11 +1,22 @@
+use pyo3::{pyclass, pymethods};
+
 use crate::math::{Quaternion, Vec3};
 use crate::model::Model;
 use crate::palette::Palette;
 
+#[pyclass]
 pub struct Scene {
     palette: Palette,
     nodes: Vec<Node>,
     animations: Vec<Animation>,
+}
+
+#[pymethods]
+impl Scene {
+    #[new]
+    fn new() -> Self {
+        Self { palette: Palette {}, nodes: vec![], animations: vec![] }
+    }
 }
 
 pub struct Node {
