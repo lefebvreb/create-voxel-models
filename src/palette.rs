@@ -25,6 +25,4 @@ impl Default for Color {
     }
 }
 
-pub struct Palette {
-
-}
+pub struct Palette {}

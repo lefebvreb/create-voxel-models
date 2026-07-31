@@ -1,0 +1,4 @@
+group_imports = "StdExternalCrate"
+imports_granularity = "Module"
+imports_layout = "Horizontal"
+max_width = 120
