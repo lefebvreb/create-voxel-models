@@ -1,13 +1,16 @@
-use pyo3::prelude::*;
+use pyo3::pymodule;
 
-/// A Python module implemented in Rust.
+mod math;
+mod model;
+mod palette;
+mod scene;
+
 #[pymodule]
 mod voxels {
-    use pyo3::prelude::*;
+    use pyo3::pyfunction;
 
-    /// Formats the sum of two numbers as string.
     #[pyfunction]
-    fn sum_as_string(a: usize, b: usize) -> PyResult<String> {
-        Ok((a + b).to_string())
+    pub fn sum(a: i32, b: i32) -> i32 {
+        a + b
     }
 }
