@@ -16,7 +16,7 @@ impl Scene {
     #[new]
     fn new() -> Self {
         Self {
-            palette: Palette {},
+            palette: Palette::new(),
             nodes: vec![],
             animations: vec![],
         }
