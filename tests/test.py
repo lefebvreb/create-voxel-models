@@ -1,4 +1,5 @@
-from voxels import Color
+from voxels import Palette
 
-c = Color((255, 0, 0))
+p = Palette()
+c = p.add_color((255, 0 ,0))
 print(c)
