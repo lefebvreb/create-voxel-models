@@ -38,7 +38,7 @@ impl Palette {
     }
 
     #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0))]
-    pub fn add_color(
+    fn add_color(
         slf: Bound<Self>,
         rgb: (u8, u8, u8),
         roughness: f32,

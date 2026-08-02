@@ -1,5 +1,6 @@
 use pyo3::pymodule;
 
+mod anim;
 mod math;
 mod model;
 mod palette;

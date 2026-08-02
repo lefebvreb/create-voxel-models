@@ -1,8 +1,7 @@
-from voxels import Palette
+from voxels import Palette, Scene
 
 p = Palette()
 c = p.add_color((255, 0 ,0))
-print(c.rgb)
-print(c.roughness)
-print(c.metallic)
-print(c.ior)
+
+s = Scene(p)
+print(s)

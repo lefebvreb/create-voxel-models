@@ -1,47 +1,30 @@
 use pyo3::{Py, pyclass, pymethods};
 
-use crate::math::{Quaternion, Vec3};
+use crate::anim::Anim;
 use crate::model::Model;
 use crate::palette::Palette;
 
 #[pyclass]
 pub struct Scene {
     palette: Py<Palette>,
-    nodes: Vec<Node>,
+    nodes: Vec<Py<Node>>,
     models: Vec<Model>,
-    animations: Vec<Animation>,
+    animations: Vec<Anim>,
 }
 
 #[pymethods]
 impl Scene {
     #[new]
-    fn new() -> Self {
-        // Self {
-        //     palette: Palette::new(),
-        //     nodes: vec![],
-        //     animations: vec![],
-        // }
-        todo!()
+    fn new(palette: Py<Palette>) -> Self {
+        Self {
+            palette,
+            nodes: Vec::new(),
+            models: Vec::new(),
+            animations: Vec::new(),
+        }
     }
 }
 
 pub struct Node {
     model: Option<Box<Model>>,
-}
-
-pub struct Animation {
-    name: Box<str>,
-    nodes: Vec<NodeAnimation>,
-}
-
-pub struct NodeAnimation {
-    node: usize,
-    pub translation: Option<Vec<Keyframe<Vec3>>>,
-    pub rotation: Option<Vec<Keyframe<Quaternion>>>,
-    pub scale: Option<Vec<Keyframe<Vec3>>>,
-}
-
-pub struct Keyframe<T> {
-    pub time: f32,
-    pub value: T,
 }
