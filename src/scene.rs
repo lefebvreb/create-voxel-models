@@ -15,7 +15,11 @@ pub struct Scene {
 impl Scene {
     #[new]
     fn new() -> Self {
-        Self { palette: Palette {}, nodes: vec![], animations: vec![] }
+        Self {
+            palette: Palette {},
+            nodes: vec![],
+            animations: vec![],
+        }
     }
 }
 

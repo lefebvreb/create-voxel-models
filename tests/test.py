@@ -1,4 +1,4 @@
-from voxels import Scene
+from voxels import Color
 
-s = Scene()
-print(s)
+c = Color((255, 0, 0))
+print(c)

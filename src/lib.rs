@@ -8,5 +8,7 @@ mod scene;
 #[pymodule]
 mod voxels {
     #[pymodule_export]
+    use crate::palette::Color;
+    #[pymodule_export]
     use crate::scene::Scene;
 }
