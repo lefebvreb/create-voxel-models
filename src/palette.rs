@@ -3,6 +3,7 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
 pub(crate) struct Color {
+    index: usize,
     palette: Py<Palette>,
     #[pyo3(get)]
     rgb: (u8, u8, u8),
@@ -48,7 +49,8 @@ impl Palette {
         emissive: f32,
     ) -> PyResult<Py<Color>> {
         let mut obj = slf.borrow_mut();
-        if obj.colors.len() == 255 {
+        let index = obj.colors.len();
+        if index == 255 {
             return Err(PyIndexError::new_err(
                 "palette already contains 255 colors, which is the maximum permitted",
             ));
@@ -56,6 +58,7 @@ impl Palette {
         let color = Py::new(
             slf.py(),
             Color {
+                index,
                 rgb,
                 roughness,
                 metallic,
@@ -67,6 +70,19 @@ impl Palette {
         )?;
         obj.colors.push(color.clone_ref(slf.py()));
         Ok(color)
+    }
+
+    fn __len__(&self) -> usize {
+        self.colors.len()
+    }
+
+    fn __getitem__(slf: Bound<Self>, index: usize) -> PyResult<Py<Color>> {
+        let obj = slf.borrow();
+        let color = obj
+            .colors
+            .get(index)
+            .ok_or_else(|| PyIndexError::new_err("color index out of bounds"))?;
+        Ok(color.clone_ref(slf.py()))
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
