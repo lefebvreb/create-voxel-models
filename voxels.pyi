@@ -1,3 +1,6 @@
+class Palette:
+    def add_color(self, rgb: tuple[int, int, int], *, roughness: float = 1.0, metallic: float = 0.0, ior: float = 1.5, transmission: float = 0.0, emissive: float = 0.0) -> Color: ...
+
 class Color:
     @property
     def rgb(self) -> tuple[int, int, int]: ...
@@ -12,17 +15,9 @@ class Color:
     @property
     def emissive(self) -> float: ...
 
-class Palette:
-    def add_color(
-        self,
-        rgb: tuple[int, int, int],
-        *,
-        roughness: float = 1.0,
-        metallic: float = 0.0,
-        ior: float = 1.5,
-        transmission: float = 0.0,
-        emissive: float = 0.0,
-    ) -> Color: ...
-
 class Scene:
     def __init__(self, palette: Palette) -> None: ...
+    def create_node(self) -> Node: ...
+
+class Node:
+    ...

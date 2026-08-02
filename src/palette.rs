@@ -20,7 +20,7 @@ pub struct Color {
 
 #[pymethods]
 impl Color {
-    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.palette)
     }
 }
@@ -33,7 +33,7 @@ pub struct Palette {
 #[pymethods]
 impl Palette {
     #[new]
-    pub fn new() -> Self {
+    fn __new__() -> Self {
         Self { colors: Vec::new() }
     }
 
@@ -69,7 +69,7 @@ impl Palette {
         Ok(color)
     }
 
-    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         self.colors.iter().try_for_each(|color| visit.call(color))
     }
 

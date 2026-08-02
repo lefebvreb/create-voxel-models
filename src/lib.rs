@@ -11,5 +11,5 @@ mod voxels {
     #[pymodule_export]
     use crate::palette::{Color, Palette};
     #[pymodule_export]
-    use crate::scene::Scene;
+    use crate::scene::{Node, Scene};
 }
