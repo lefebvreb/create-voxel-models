@@ -2,7 +2,7 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
-pub struct Color {
+pub(crate) struct Color {
     palette: Py<Palette>,
     #[pyo3(get)]
     rgb: (u8, u8, u8),
@@ -26,7 +26,7 @@ impl Color {
 }
 
 #[pyclass]
-pub struct Palette {
+pub(crate) struct Palette {
     colors: Vec<Py<Color>>,
 }
 

@@ -5,10 +5,10 @@ use crate::model::Model;
 use crate::palette::Palette;
 
 #[pyclass]
-pub struct Scene {
+pub(crate) struct Scene {
     palette: Py<Palette>,
     nodes: Vec<Py<Node>>,
-    models: Vec<Model>,
+    models: Vec<Py<Model>>,
     anims: Vec<Anim>,
 }
 
@@ -37,23 +37,28 @@ impl Scene {
         Ok(node)
     }
 
+    fn create_model(slf: Bound<Self>, parent: Py<Node>, dimensions: (u8, u8, u8)) -> PyResult<Py<Model>> {
+        let model = Model::new();
+        todo!()
+    }
+
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.palette)?;
         self.nodes.iter().try_for_each(|node| visit.call(node))?;
-        // self.models.iter().try_for_each(|model| visit.call(model))?;
+        self.models.iter().try_for_each(|model| visit.call(model))?;
         // self.anims.iter().try_for_each(|anim| visit.call(anim))?;
         Ok(())
     }
 
     fn __clear__(&mut self) {
         self.nodes.clear();
-        // self.models.clear();
+        self.models.clear();
         // self.anims.clear();
     }
 }
 
 #[pyclass]
-pub struct Node {
+pub(crate) struct Node {
     index: usize,
     scene: Py<Scene>,
 }
