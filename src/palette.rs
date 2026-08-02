@@ -1,25 +1,33 @@
 use pyo3::exceptions::PyIndexError;
-use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
-
-pub struct ColorData {
-    pub rgba: (u8, u8, u8),
-    pub roughness: f32,
-    pub metallic: f32,
-    pub ior: f32,
-    pub transmission: f32,
-    pub emissive: f32,
-}
+use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
 pub struct Color {
-    /// 1-based index into the palette's `colors` field.
-    index: u8,
     palette: Py<Palette>,
+    #[pyo3(get)]
+    rgb: (u8, u8, u8),
+    #[pyo3(get)]
+    roughness: f32,
+    #[pyo3(get)]
+    metallic: f32,
+    #[pyo3(get)]
+    ior: f32,
+    #[pyo3(get)]
+    transmission: f32,
+    #[pyo3(get)]
+    emissive: f32,
+}
+
+#[pymethods]
+impl Color {
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        visit.call(&self.palette)
+    }
 }
 
 #[pyclass]
 pub struct Palette {
-    colors: Vec<ColorData>,
+    colors: Vec<Py<Color>>,
 }
 
 #[pymethods]
@@ -29,33 +37,43 @@ impl Palette {
         Self { colors: Vec::new() }
     }
 
-    #[pyo3(signature = (rgba, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0))]
+    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0))]
     pub fn add_color(
         slf: Bound<Self>,
-        rgba: (u8, u8, u8),
+        rgb: (u8, u8, u8),
         roughness: f32,
         metallic: f32,
         ior: f32,
         transmission: f32,
         emissive: f32,
-    ) -> PyResult<Color> {
+    ) -> PyResult<Py<Color>> {
         let mut obj = slf.borrow_mut();
         if obj.colors.len() == 255 {
             return Err(PyIndexError::new_err(
                 "palette already contains 255 colors, which is the maximum permitted",
             ));
         }
-        obj.colors.push(ColorData {
-            rgba,
-            roughness,
-            metallic,
-            ior,
-            transmission,
-            emissive,
-        });
-        Ok(Color {
-            index: u8::try_from(obj.colors.len()).expect("palette index should fit in a byte"),
-            palette: slf.unbind(),
-        })
+        let color = Py::new(
+            slf.py(),
+            Color {
+                rgb,
+                roughness,
+                metallic,
+                ior,
+                transmission,
+                emissive,
+                palette: slf.as_unbound().clone_ref(slf.py()),
+            },
+        )?;
+        obj.colors.push(color.clone_ref(slf.py()));
+        Ok(color)
+    }
+
+    fn __traverse__(&self, visit: PyVisit<'_>) -> Result<(), PyTraverseError> {
+        self.colors.iter().try_for_each(|color| visit.call(color))
+    }
+
+    fn __clear__(&mut self) {
+        self.colors.clear();
     }
 }
