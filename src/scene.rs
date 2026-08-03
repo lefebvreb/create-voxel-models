@@ -12,19 +12,11 @@ pub(crate) struct Scene {
     pub anims: Vec<Anim>,
 }
 
-#[pymethods]
 impl Scene {
-    #[new]
-    fn __new__(palette: Py<Palette>) -> Self {
-        Self {
-            palette,
-            nodes: Vec::new(),
-            models: Vec::new(),
-            anims: Vec::new(),
-        }
-    }
-
-    fn create_node(slf: Bound<Self>, name: String, parent: Option<Py<Node>>) -> PyResult<Py<Node>> {
+    /// # Preconditions
+    /// 
+    /// `parent` is assumed to belong in `Self`.
+    fn create_node(slf: &Bound<Self>, parent: Option<Py<Node>>, name: String) -> PyResult<Py<Node>> {
         let mut obj = slf.borrow_mut();
         let node = Py::new(
             slf.py(),
@@ -38,17 +30,29 @@ impl Scene {
         obj.nodes.push(node.clone_ref(slf.py()));
         Ok(node)
     }
+}
 
-    fn create_model(slf: Bound<Self>, parent: Py<Node>, dimensions: (u8, u8, u8)) -> PyResult<Py<Model>> {
-        todo!()
+#[pymethods]
+impl Scene {
+    #[new]
+    fn __new__(palette: Py<Palette>) -> Self {
+        Self {
+            palette,
+            nodes: Vec::new(),
+            models: Vec::new(),
+            anims: Vec::new(),
+        }
+    }
+
+    fn create_root_node(slf: Bound<Self>, name: String) -> PyResult<Py<Node>> {
+        Scene::create_node(&slf, None, name)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.palette)?;
         self.nodes.iter().try_for_each(|node| visit.call(node))?;
-        self.models.iter().try_for_each(|model| visit.call(model))?;
+        self.models.iter().try_for_each(|model| visit.call(model))
         // self.anims.iter().try_for_each(|anim| visit.call(anim))?;
-        Ok(())
     }
 
     fn __clear__(&mut self) {
@@ -58,7 +62,7 @@ impl Scene {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen)]
 pub(crate) struct Node {
     pub name: String,
     pub index: usize,
@@ -68,7 +72,14 @@ pub(crate) struct Node {
 
 #[pymethods]
 impl Node {
+    fn create_child_node(slf: Bound<Self>, name: String) -> PyResult<Py<Node>> {
+        let parent = slf.as_unbound().clone_ref(slf.py());
+        let scene = slf.get().scene.bind(slf.py());
+        Scene::create_node(scene, Some(parent), name)
+    }
+
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        visit.call(&self.parent)?;
         visit.call(&self.scene)
     }
 }
