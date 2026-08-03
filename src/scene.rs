@@ -6,10 +6,10 @@ use crate::palette::Palette;
 
 #[pyclass]
 pub(crate) struct Scene {
-    palette: Py<Palette>,
-    nodes: Vec<Py<Node>>,
-    models: Vec<Py<Model>>,
-    anims: Vec<Anim>,
+    pub palette: Py<Palette>,
+    pub nodes: Vec<Py<Node>>,
+    pub models: Vec<Py<Model>>,
+    pub anims: Vec<Anim>,
 }
 
 #[pymethods]
@@ -24,11 +24,13 @@ impl Scene {
         }
     }
 
-    fn create_node(slf: Bound<Self>) -> PyResult<Py<Node>> {
+    fn create_node(slf: Bound<Self>, name: String, parent: Option<Py<Node>>) -> PyResult<Py<Node>> {
         let mut obj = slf.borrow_mut();
         let node = Py::new(
             slf.py(),
             Node {
+                name,
+                parent,
                 index: obj.nodes.len(),
                 scene: slf.as_unbound().clone_ref(slf.py()),
             },
@@ -38,7 +40,6 @@ impl Scene {
     }
 
     fn create_model(slf: Bound<Self>, parent: Py<Node>, dimensions: (u8, u8, u8)) -> PyResult<Py<Model>> {
-        let model = Model::new();
         todo!()
     }
 
@@ -59,8 +60,10 @@ impl Scene {
 
 #[pyclass]
 pub(crate) struct Node {
-    index: usize,
-    scene: Py<Scene>,
+    pub name: String,
+    pub index: usize,
+    pub parent: Option<Py<Self>>,
+    pub scene: Py<Scene>,
 }
 
 #[pymethods]

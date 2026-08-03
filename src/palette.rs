@@ -3,20 +3,20 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
 pub(crate) struct Color {
-    index: usize,
-    palette: Py<Palette>,
+    pub index: usize,
+    pub palette: Py<Palette>,
     #[pyo3(get)]
-    rgb: (u8, u8, u8),
+    pub rgb: (u8, u8, u8),
     #[pyo3(get)]
-    roughness: f32,
+    pub roughness: f32,
     #[pyo3(get)]
-    metallic: f32,
+    pub metallic: f32,
     #[pyo3(get)]
-    ior: f32,
+    pub ior: f32,
     #[pyo3(get)]
-    transmission: f32,
+    pub transmission: f32,
     #[pyo3(get)]
-    emissive: f32,
+    pub emissive: f32,
 }
 
 #[pymethods]
@@ -28,7 +28,7 @@ impl Color {
 
 #[pyclass]
 pub(crate) struct Palette {
-    colors: Vec<Py<Color>>,
+    pub colors: Vec<Py<Color>>,
 }
 
 #[pymethods]

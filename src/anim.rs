@@ -1,7 +1,7 @@
 use crate::math::{Quaternion, Vec3};
 
 pub struct Anim {
-    name: Box<str>,
+    name: String,
     nodes: Vec<NodeAnim>,
 }
 

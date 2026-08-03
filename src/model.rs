@@ -1,18 +1,14 @@
 use pyo3::{Py, pyclass};
 
 use crate::palette::Palette;
-use crate::scene::Node;
+use crate::scene::{Node, Scene};
 
 #[pyclass]
 pub(crate) struct Model {
-    data: Box<[u8]>,
-    dims: (u8, u8, u8),
-    palette: Py<Palette>,
-    parent: Py<Node>,
-}
-
-impl Model {
-    pub(crate) fn new() -> Model {
-        todo!()
-    }
+    pub name: String,
+    pub data: Box<[u8]>,
+    pub dims: (u8, u8, u8),
+    pub palette: Py<Palette>,
+    pub parent: Py<Node>,
+    pub scene: Py<Scene>,
 }
