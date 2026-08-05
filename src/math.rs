@@ -3,6 +3,8 @@ use std::f64::consts::PI;
 use either::Either;
 use pyo3::{Bound, pyclass, pymethods};
 
+pub type Pos = (usize, usize, usize);
+
 #[pyclass(frozen)]
 pub struct Vec3 {
     pub inner: glam::DVec3,
@@ -11,7 +13,9 @@ pub struct Vec3 {
 #[pymethods]
 impl Vec3 {
     #[classattr]
-    const ZERO: Self = Self { inner: glam::DVec3::ZERO };
+    const ZERO: Self = Self {
+        inner: glam::DVec3::ZERO,
+    };
 
     #[new]
     fn new(x: f64, y: f64, z: f64) -> Self {

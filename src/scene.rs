@@ -2,11 +2,9 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::anim::Anim;
 use crate::model::Model;
-use crate::palette::Palette;
 
 #[pyclass]
 pub struct Scene {
-    pub palette: Py<Palette>,
     pub nodes: Vec<Py<Node>>,
     pub models: Vec<Py<Model>>,
     pub anims: Vec<Anim>,
@@ -35,9 +33,8 @@ impl Scene {
 #[pymethods]
 impl Scene {
     #[new]
-    fn __new__(palette: Py<Palette>) -> Self {
+    fn __new__() -> Self {
         Self {
-            palette,
             nodes: Vec::new(),
             models: Vec::new(),
             anims: Vec::new(),
@@ -49,7 +46,6 @@ impl Scene {
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        visit.call(&self.palette)?;
         self.nodes.iter().try_for_each(|node| visit.call(node))?;
         self.models.iter().try_for_each(|model| visit.call(model))
         // self.anims.iter().try_for_each(|anim| visit.call(anim))?;
