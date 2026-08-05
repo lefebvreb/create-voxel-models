@@ -14,7 +14,7 @@ pub struct Scene {
 
 impl Scene {
     /// # Preconditions
-    /// 
+    ///
     /// `parent` is assumed to belong in `Self`.
     fn create_node(slf: &Bound<Self>, parent: Option<Py<Node>>, name: String) -> PyResult<Py<Node>> {
         let mut obj = slf.borrow_mut();
