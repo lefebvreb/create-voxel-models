@@ -1,4 +1,4 @@
-use crate::math::{Quaternion, Vec3};
+use crate::math::{Quat, Vec3};
 
 pub struct Anim {
     name: String,
@@ -8,11 +8,11 @@ pub struct Anim {
 pub struct NodeAnim {
     node: usize,
     pub translation: Option<Vec<Keyframe<Vec3>>>,
-    pub rotation: Option<Vec<Keyframe<Quaternion>>>,
+    pub rotation: Option<Vec<Keyframe<Quat>>>,
     pub scale: Option<Vec<Keyframe<Vec3>>>,
 }
 
 pub struct Keyframe<T> {
-    pub time: f32,
+    pub time: f64,
     pub value: T,
 }

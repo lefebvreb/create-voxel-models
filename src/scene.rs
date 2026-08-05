@@ -5,7 +5,7 @@ use crate::model::Model;
 use crate::palette::Palette;
 
 #[pyclass]
-pub(crate) struct Scene {
+pub struct Scene {
     pub palette: Py<Palette>,
     pub nodes: Vec<Py<Node>>,
     pub models: Vec<Py<Model>>,
@@ -63,7 +63,7 @@ impl Scene {
 }
 
 #[pyclass(frozen)]
-pub(crate) struct Node {
+pub struct Node {
     pub name: String,
     pub index: usize,
     pub parent: Option<Py<Self>>,

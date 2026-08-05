@@ -9,6 +9,8 @@ mod scene;
 #[pymodule]
 mod voxels {
     #[pymodule_export]
+    use crate::math::{Quat, Vec3};
+    #[pymodule_export]
     use crate::model::Model;
     #[pymodule_export]
     use crate::palette::{Color, Palette};

@@ -2,21 +2,15 @@ use pyo3::exceptions::PyIndexError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
-pub(crate) struct Color {
+pub struct Color {
     pub index: usize,
-    pub palette: Py<Palette>,
-    #[pyo3(get)]
     pub rgb: (u8, u8, u8),
-    #[pyo3(get)]
-    pub roughness: f32,
-    #[pyo3(get)]
-    pub metallic: f32,
-    #[pyo3(get)]
-    pub ior: f32,
-    #[pyo3(get)]
-    pub transmission: f32,
-    #[pyo3(get)]
-    pub emissive: f32,
+    pub roughness: f64,
+    pub metallic: f64,
+    pub ior: f64,
+    pub transmission: f64,
+    pub emissive: f64,
+    pub palette: Py<Palette>,
 }
 
 #[pymethods]
@@ -27,7 +21,7 @@ impl Color {
 }
 
 #[pyclass]
-pub(crate) struct Palette {
+pub struct Palette {
     pub colors: Vec<Py<Color>>,
 }
 
@@ -42,11 +36,11 @@ impl Palette {
     fn add_color(
         slf: Bound<Self>,
         rgb: (u8, u8, u8),
-        roughness: f32,
-        metallic: f32,
-        ior: f32,
-        transmission: f32,
-        emissive: f32,
+        roughness: f64,
+        metallic: f64,
+        ior: f64,
+        transmission: f64,
+        emissive: f64,
     ) -> PyResult<Py<Color>> {
         let mut obj = slf.borrow_mut();
         let index = obj.colors.len();
