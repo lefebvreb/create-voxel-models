@@ -5,6 +5,7 @@ mod math;
 mod model;
 mod palette;
 mod scene;
+mod utils;
 
 #[pymodule]
 mod voxels {

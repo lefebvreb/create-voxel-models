@@ -1,8 +1,8 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
 
-use crate::math::Pos;
 use crate::palette::{Color, Palette};
+use crate::utils::Pos;
 
 #[pyclass]
 pub struct Model {

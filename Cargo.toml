@@ -11,4 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 either = { version = "1.17.0", default-features = false }
 glam = { version = "0.33.3", default-features = false, features = ["f64", "std"] }
-pyo3 = { version = "0.29.1", features = ["either"] }
+pyo3 = { version = "0.29.1", features = ["either", "experimental-inspect"] }
