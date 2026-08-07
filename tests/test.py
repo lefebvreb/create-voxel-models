@@ -4,5 +4,5 @@ p = Palette()
 c = p.add_color((255, 0 ,0))
 print(len(p))
 
-s = Scene(p)
+s = Scene()
 print(s)

@@ -15,6 +15,11 @@ impl Vec3 {
         inner: glam::DVec3::ZERO,
     };
 
+    #[classattr]
+    const ONES: Self = Self {
+        inner: glam::DVec3::ONE,
+    };
+
     #[new]
     fn new(x: f64, y: f64, z: f64) -> Self {
         Self {
@@ -41,15 +46,15 @@ impl Vec3 {
         Self { inner: -self.inner }
     }
 
-    fn __add__(&self, other: Bound<Self>) -> Self {
+    fn __add__(&self, other: &Self) -> Self {
         Self {
-            inner: self.inner + other.get().inner,
+            inner: self.inner + other.inner,
         }
     }
 
-    fn __sub__(&self, other: Bound<Self>) -> Self {
+    fn __sub__(&self, other: &Self) -> Self {
         Self {
-            inner: self.inner - other.get().inner,
+            inner: self.inner - other.inner,
         }
     }
 
@@ -67,10 +72,6 @@ impl Vec3 {
             inner: self.inner / scale,
         }
     }
-}
-
-fn deg_to_rad(a: f64) -> f64 {
-    a * (PI / 180.0)
 }
 
 #[pyclass(frozen)]
@@ -112,9 +113,13 @@ impl Quat {
         }
     }
 
-    fn __mul__(&self, other: Bound<Self>) -> Self {
+    fn __mul__(&self, other: &Self) -> Self {
         Self {
-            inner: self.inner * other.get().inner,
+            inner: self.inner * other.inner,
         }
     }
+}
+
+fn deg_to_rad(a: f64) -> f64 {
+    a * (PI / 180.0)
 }

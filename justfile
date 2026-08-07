@@ -7,6 +7,10 @@ check:
 fmt:
     cargo +nightly fmt
 
+# Regenerates the `voxel.pyi` stubs file.
+stubs:
+    maturin generate-stubs --out .
+
 # Run all test scripts
 test:
     maturin develop
