@@ -67,9 +67,9 @@ impl Vec3 {
         }
     }
 
-    fn __div__(&self, scale: f64) -> Self {
+    fn __truediv__(&self, other: f64) -> Self {
         Self {
-            inner: self.inner / scale,
+            inner: self.inner / other,
         }
     }
 }
