@@ -42,8 +42,8 @@ impl Palette {
         transmission: f64,
         emissive: f64,
     ) -> PyResult<Py<Color>> {
-        let mut obj = slf.borrow_mut();
-        let index = obj.colors.len();
+        let mut slf_brw = slf.borrow_mut();
+        let index = slf_brw.colors.len();
         if index >= 255 {
             return Err(PyIndexError::new_err(
                 "palette already contains 255 colors, which is the maximum permitted",
@@ -59,24 +59,15 @@ impl Palette {
                 transmission,
                 emissive,
                 index: u8::try_from(index).expect("color index should fit in a byte"),
-                palette: slf.as_unbound().clone_ref(slf.py()),
+                palette: slf.clone().unbind(),
             },
         )?;
-        obj.colors.push(color.clone_ref(slf.py()));
+        slf_brw.colors.push(color.clone_ref(slf.py()));
         Ok(color)
     }
 
     fn __len__(&self) -> usize {
         self.colors.len()
-    }
-
-    fn __getitem__(slf: Bound<Self>, index: usize) -> PyResult<Py<Color>> {
-        let obj = slf.borrow();
-        let color = obj
-            .colors
-            .get(index)
-            .ok_or_else(|| PyIndexError::new_err("color index out of bounds"))?;
-        Ok(color.clone_ref(slf.py()))
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
