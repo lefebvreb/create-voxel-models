@@ -10,6 +10,7 @@ pub struct Color {
     pub transmission: f64,
     pub emissive: f64,
     pub index: u8,
+    #[pyo3(get)]
     pub palette: Py<Palette>,
 }
 

@@ -1,18 +1,22 @@
-// use crate::math::{Quat, Vec3};
+use pyo3::pyclass;
 
-// pub struct Anim {
-//     name: String,
-//     nodes: Vec<NodeAnim>,
-// }
+use crate::math::{Quat, Vec3};
 
-// pub struct NodeAnim {
-//     node: usize,
-//     pub translation: Option<Vec<Keyframe<Vec3>>>,
-//     pub rotation: Option<Vec<Keyframe<Quat>>>,
-//     pub scale: Option<Vec<Keyframe<Vec3>>>,
-// }
+#[pyclass]
+pub struct Anim {
+    pub name: String,
+    pub nodes: Vec<NodeAnim>,
+}
 
-// pub struct Keyframe<T> {
-//     pub time: f64,
-//     pub value: T,
-// }
+#[pyclass]
+pub struct NodeAnim {
+    pub node: usize,
+    pub translation: Option<Vec<Keyframe<Vec3>>>,
+    pub rotation: Option<Vec<Keyframe<Quat>>>,
+    pub scale: Option<Vec<Keyframe<Vec3>>>,
+}
+
+pub struct Keyframe<T> {
+    pub time: f64,
+    pub value: T,
+}

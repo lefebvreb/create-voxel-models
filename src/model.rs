@@ -6,15 +6,17 @@ use crate::utils::Int3;
 
 #[pyclass]
 pub struct Model {
-    pub dims: Int3,
+    #[pyo3(get)]
+    pub dimensions: Int3,
     pub data: Box<[u8]>,
+    #[pyo3(get)]
     pub palette: Py<Palette>,
 }
 
 impl Model {
     fn pos_to_index(&self, pos: Int3) -> PyResult<usize> {
         let (x, y, z) = pos;
-        let (dx, dy, dz) = self.dims;
+        let (dx, dy, dz) = self.dimensions;
         if x >= dx || y >= dy || z >= dz {
             return Err(PyValueError::new_err("coordinates are out of bounds of this model"));
         }
@@ -35,23 +37,23 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn new(dims: Int3, palette: Py<Palette>) -> PyResult<Self> {
-        let (dx, dy, dz) = dims;
+    fn new(dimensions: Int3, palette: Py<Palette>) -> PyResult<Self> {
+        let (dx, dy, dz) = dimensions;
         if dx > 256 || dy > 256 || dz > 256 {
             return Err(PyValueError::new_err(
                 "dimension along any given axis cannot surpass 256",
             ));
         }
         Ok(Self {
-            dims,
+            dimensions,
             data: vec![0; dx * dy * dz].into_boxed_slice(),
             palette,
         })
     }
 
-    #[pyo3(signature = (pos, color = None))]
-    fn put(&mut self, pos: Int3, color: Option<Bound<Color>>) -> PyResult<()> {
-        let index = self.pos_to_index(pos)?;
+    #[pyo3(signature = (position, color = None))]
+    fn put(&mut self, position: Int3, color: Option<Bound<Color>>) -> PyResult<()> {
+        let index = self.pos_to_index(position)?;
         let color = self.check_color_get_id(color)?;
         self.data[index] = color;
         Ok(())
