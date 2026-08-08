@@ -38,7 +38,7 @@ impl Scene {
 
     #[pyo3(signature = (name, *, extra = None))]
     fn create_root_node(slf: Bound<Self>, name: String, extra: Option<Dict>) -> PyResult<Py<Node>> {
-        Self::add_node(&slf, |index| Node { 
+        Self::add_node(&slf, |index| Node {
             name,
             index,
             translation: None,
@@ -109,7 +109,6 @@ impl Node {
             extra: extra.unwrap_or_default(),
             parent: slf.clone().unbind(),
             model,
-            scene: scene.clone().unbind(),
         })
     }
 
@@ -125,13 +124,11 @@ pub struct NodeModel {
     pub extra: Dict,
     pub parent: Py<Node>,
     pub model: Py<Model>,
-    pub scene: Py<Scene>,
 }
 
 impl NodeModel {
     fn __traverse__(&self, visit: &PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.parent)?;
-        visit.call(&self.model)?;
-        visit.call(&self.scene)
+        visit.call(&self.model)
     }
 }

@@ -1,7 +1,8 @@
-# Checks formatting and lints the codebase.
+# Checks formatting, lints the codebase.
 check:
     cargo +nightly fmt --check
-    cargo +stable clippy
+    cargo +stable clippy -- -Dwarnings
+    maturin generate-stubs --out /tmp && diff voxels.pyi /tmp/voxels.pyi
 
 # Formats the codebase.
 fmt:
