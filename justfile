@@ -8,6 +8,10 @@ check:
 fmt:
     cargo +nightly fmt
 
+# Lints the codebase.
+clippy:
+    cargo +stable clippy
+
 # Regenerates the `.pyi` stubs file.
 stubs:
     maturin generate-stubs --out .

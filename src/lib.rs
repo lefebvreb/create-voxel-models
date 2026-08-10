@@ -10,6 +10,8 @@ mod utils;
 #[pymodule]
 mod voxels {
     #[pymodule_export]
+    use crate::anim::{Anim, Interpolation};
+    #[pymodule_export]
     use crate::math::{Quat, Vec3};
     #[pymodule_export]
     use crate::model::Model;

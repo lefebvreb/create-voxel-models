@@ -63,6 +63,7 @@ impl Scene {
 
 #[pyclass(frozen)]
 pub struct Node {
+    #[pyo3(get)]
     pub name: String,
     pub index: usize,
     pub translation: Option<Vec3>,
