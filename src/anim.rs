@@ -14,27 +14,8 @@ pub struct Anim {
 
 #[pymethods]
 impl Anim {
+    #[pyo3(signature = (node, input, output, *, interpolation = Interpolation::Linear))]
     pub fn add_translation(
-        slf: Bound<Self>,
-        node: Py<Node>,
-        input: Vec<f64>,
-        output: Vec<Vec3>,
-        interpolation: Interpolation,
-    ) {
-        todo!()
-    }
-
-    pub fn add_rotation(
-        slf: Bound<Self>,
-        node: Py<Node>,
-        input: Vec<f64>,
-        output: Vec<Quat>,
-        interpolation: Interpolation,
-    ) {
-        todo!()
-    }
-
-    pub fn add_scale(
         slf: Bound<Self>,
         node: Py<Node>,
         input: Vec<f64>,

@@ -7,7 +7,7 @@ use crate::utils::Dict;
 #[pyclass]
 pub struct Scene {
     pub nodes: Vec<Py<Node>>,
-    pub models: Vec<NodeModel>,
+    pub models: Vec<Py<Mesh>>,
 }
 
 impl Scene {
@@ -18,11 +18,11 @@ impl Scene {
         Ok(node)
     }
 
-    fn add_model(slf: &Bound<Self>, f: impl FnOnce(usize) -> NodeModel) -> PyResult<()> {
+    fn add_model(slf: &Bound<Self>, f: impl FnOnce(usize) -> Mesh) -> PyResult<Py<Mesh>> {
         let mut slf_brw = slf.borrow_mut();
-        let model = f(slf_brw.nodes.len());
-        slf_brw.models.push(model);
-        Ok(())
+        let model = Py::new(slf.py(), f(slf_brw.nodes.len()))?;
+        slf_brw.models.push(model.clone_ref(slf.py()));
+        Ok(model)
     }
 }
 
@@ -52,7 +52,7 @@ impl Scene {
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         self.nodes.iter().try_for_each(|node| visit.call(node))?;
-        self.models.iter().try_for_each(|model| model.__traverse__(&visit))
+        self.models.iter().try_for_each(|model| visit.call(model))
     }
 
     fn __clear__(&mut self) {
@@ -101,10 +101,10 @@ impl Node {
     }
 
     #[pyo3(signature = (name, model, *, extra = None))]
-    fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extra: Option<Dict>) -> PyResult<()> {
+    fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extra: Option<Dict>) -> PyResult<Py<Mesh>> {
         let slf_brw = slf.get();
         let scene = slf_brw.scene.bind(slf.py());
-        Scene::add_model(scene, |index| NodeModel {
+        Scene::add_model(scene, |index| Mesh {
             name,
             index,
             extra: extra.unwrap_or_default(),
@@ -119,16 +119,21 @@ impl Node {
     }
 }
 
-pub struct NodeModel {
+#[pyclass]
+pub struct Mesh {
+    #[pyo3(get)]
     pub name: String,
     pub index: usize,
     pub extra: Dict,
+    #[pyo3(get)]
     pub parent: Py<Node>,
+    #[pyo3(get)]
     pub model: Py<Model>,
 }
 
-impl NodeModel {
-    fn __traverse__(&self, visit: &PyVisit) -> Result<(), PyTraverseError> {
+#[pymethods]
+impl Mesh {
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.parent)?;
         visit.call(&self.model)
     }
