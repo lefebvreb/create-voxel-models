@@ -3,13 +3,19 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
 pub struct Color {
-    pub rgb: (u8, u8, u8),
-    pub roughness: f64,
-    pub metallic: f64,
-    pub ior: f64,
-    pub transmission: f64,
-    pub emissive: f64,
     pub index: u8,
+    #[pyo3(get)]
+    pub rgb: (u8, u8, u8),
+    #[pyo3(get)]
+    pub roughness: f64,
+    #[pyo3(get)]
+    pub metallic: f64,
+    #[pyo3(get)]
+    pub ior: f64,
+    #[pyo3(get)]
+    pub transmission: f64,
+    #[pyo3(get)]
+    pub emissive: f64,
     #[pyo3(get)]
     pub palette: Py<Palette>,
 }

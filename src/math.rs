@@ -10,6 +10,7 @@ pub struct Vec3 {
     pub inner: glam::DVec3,
 }
 
+/// Is this even necessary?
 #[pymethods]
 impl Vec3 {
     /// A vector that only contains zeros.
