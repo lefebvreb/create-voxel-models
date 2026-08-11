@@ -37,7 +37,7 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn new(dimensions: Int3, palette: Py<Palette>) -> PyResult<Self> {
+    fn __new__(dimensions: Int3, palette: Py<Palette>) -> PyResult<Self> {
         let (dx, dy, dz) = dimensions;
         if dx > 256 || dy > 256 || dz > 256 {
             return Err(PyValueError::new_err(

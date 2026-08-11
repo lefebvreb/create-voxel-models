@@ -1,11 +1,14 @@
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
+use crate::anim::Anim;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
 use crate::utils::Dict;
 
 #[pyclass]
+#[derive(Default)]
 pub struct Scene {
+    pub anims: Vec<Py<Anim>>,
     pub nodes: Vec<Py<Node>>,
     pub models: Vec<Py<Mesh>>,
 }
@@ -30,10 +33,7 @@ impl Scene {
 impl Scene {
     #[new]
     fn __new__() -> Self {
-        Self {
-            nodes: Vec::new(),
-            models: Vec::new(),
-        }
+        Self::default()
     }
 
     #[pyo3(signature = (name, *, extra = None))]
@@ -51,11 +51,13 @@ impl Scene {
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        self.anims.iter().try_for_each(|anim| visit.call(anim))?;
         self.nodes.iter().try_for_each(|node| visit.call(node))?;
         self.models.iter().try_for_each(|model| visit.call(model))
     }
 
     fn __clear__(&mut self) {
+        self.anims.clear();
         self.nodes.clear();
         self.models.clear();
     }

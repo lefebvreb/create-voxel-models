@@ -28,6 +28,7 @@ impl Color {
 }
 
 #[pyclass]
+#[derive(Default)]
 pub struct Palette {
     pub colors: Vec<Py<Color>>,
 }
@@ -36,7 +37,7 @@ pub struct Palette {
 impl Palette {
     #[new]
     fn __new__() -> Self {
-        Self { colors: Vec::new() }
+        Self::default()
     }
 
     #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0))]

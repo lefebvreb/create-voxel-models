@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
+use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::math::{Quat, Vec3};
 use crate::scene::{Node, Scene};
@@ -78,6 +78,11 @@ impl Anim {
                 output,
             })
         })
+    }
+
+    fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
+        self.nodes.keys().try_for_each(|node| visit.call(&node.0))?;
+        visit.call(&self.scene)
     }
 }
 
