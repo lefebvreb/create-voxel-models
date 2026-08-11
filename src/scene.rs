@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::anim::Anim;
@@ -8,24 +10,18 @@ use crate::utils::Dict;
 #[pyclass]
 #[derive(Default)]
 pub struct Scene {
-    pub anims: Vec<Py<Anim>>,
-    pub nodes: Vec<Py<Node>>,
-    pub models: Vec<Py<Mesh>>,
+    pub anims: HashMap<String, Py<Anim>>,
+    pub nodes: HashMap<String, Py<Node>>,
+    pub meshes: HashMap<String, Py<Mesh>>,
 }
 
 impl Scene {
-    fn add_node(slf: &Bound<Self>, f: impl FnOnce(usize) -> Node) -> PyResult<Py<Node>> {
+    fn add_node(slf: &Bound<Self>, node: Node) -> PyResult<Py<Node>> {
         let mut slf_brw = slf.borrow_mut();
-        let node = Py::new(slf.py(), f(slf_brw.nodes.len()))?;
-        slf_brw.nodes.push(node.clone_ref(slf.py()));
+        let name = node.name.clone();
+        let node = Py::new(slf.py(), node)?;
+        slf_brw.nodes.insert(name, node.clone_ref(slf.py()));
         Ok(node)
-    }
-
-    fn add_model(slf: &Bound<Self>, f: impl FnOnce(usize) -> Mesh) -> PyResult<Py<Mesh>> {
-        let mut slf_brw = slf.borrow_mut();
-        let model = Py::new(slf.py(), f(slf_brw.nodes.len()))?;
-        slf_brw.models.push(model.clone_ref(slf.py()));
-        Ok(model)
     }
 }
 
@@ -38,28 +34,45 @@ impl Scene {
 
     #[pyo3(signature = (name, *, extra = None))]
     fn create_root_node(slf: Bound<Self>, name: String, extra: Option<Dict>) -> PyResult<Py<Node>> {
-        Self::add_node(&slf, |index| Node {
-            name,
-            index,
-            translation: None,
-            rotation: None,
-            scale: None,
-            extra: extra.unwrap_or_default(),
-            parent: None,
-            scene: slf.clone().unbind(),
-        })
+        Self::add_node(
+            &slf,
+            Node {
+                name,
+                translation: None,
+                rotation: None,
+                scale: None,
+                extra: extra.unwrap_or_default(),
+                parent: None,
+                scene: slf.clone().unbind(),
+            },
+        )
+    }
+
+    #[pyo3(signature = (name, *, extra = None))]
+    fn create_anim(slf: Bound<Self>, name: String, extra: Option<Dict>) -> PyResult<Py<Anim>> {
+        let anim = Py::new(
+            slf.py(),
+            Anim {
+                name: name.clone(),
+                extra,
+                nodes: HashMap::default(),
+                scene: slf.clone().unbind(),
+            },
+        )?;
+        slf.borrow_mut().anims.insert(name, anim.clone_ref(slf.py()));
+        Ok(anim)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.anims.iter().try_for_each(|anim| visit.call(anim))?;
-        self.nodes.iter().try_for_each(|node| visit.call(node))?;
-        self.models.iter().try_for_each(|model| visit.call(model))
+        self.anims.values().try_for_each(|anim| visit.call(anim))?;
+        self.nodes.values().try_for_each(|node| visit.call(node))?;
+        self.meshes.values().try_for_each(|model| visit.call(model))
     }
 
     fn __clear__(&mut self) {
         self.anims.clear();
         self.nodes.clear();
-        self.models.clear();
+        self.meshes.clear();
     }
 }
 
@@ -67,7 +80,6 @@ impl Scene {
 pub struct Node {
     #[pyo3(get)]
     pub name: String,
-    pub index: usize,
     pub translation: Option<Vec3>,
     pub rotation: Option<Quat>,
     pub scale: Option<Vec3>,
@@ -90,29 +102,34 @@ impl Node {
         extra: Option<Dict>,
     ) -> PyResult<Py<Node>> {
         let scene = slf.get().scene.bind(slf.py());
-        Scene::add_node(scene, |index| Node {
-            name,
-            index,
-            translation,
-            rotation,
-            scale,
-            extra: extra.unwrap_or_default(),
-            parent: Some(slf.clone().unbind()),
-            scene: scene.clone().unbind(),
-        })
+        Scene::add_node(
+            scene,
+            Node {
+                name,
+                translation,
+                rotation,
+                scale,
+                extra: extra.unwrap_or_default(),
+                parent: Some(slf.clone().unbind()),
+                scene: scene.clone().unbind(),
+            },
+        )
     }
 
     #[pyo3(signature = (name, model, *, extra = None))]
     fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extra: Option<Dict>) -> PyResult<Py<Mesh>> {
-        let slf_brw = slf.get();
-        let scene = slf_brw.scene.bind(slf.py());
-        Scene::add_model(scene, |index| Mesh {
-            name,
-            index,
-            extra: extra.unwrap_or_default(),
-            parent: slf.clone().unbind(),
-            model,
-        })
+        let mesh = Py::new(
+            slf.py(),
+            Mesh {
+                name: name.clone(),
+                extra: extra.unwrap_or_default(),
+                parent: slf.clone().unbind(),
+                model,
+            },
+        )?;
+        let mut scene = slf.get().scene.borrow_mut(slf.py());
+        scene.meshes.insert(name, mesh.clone_ref(slf.py()));
+        Ok(mesh)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
@@ -125,7 +142,6 @@ impl Node {
 pub struct Mesh {
     #[pyo3(get)]
     pub name: String,
-    pub index: usize,
     pub extra: Dict,
     #[pyo3(get)]
     pub parent: Py<Node>,

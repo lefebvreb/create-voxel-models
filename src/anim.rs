@@ -5,12 +5,13 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::math::{Quat, Vec3};
 use crate::scene::{Node, Scene};
-use crate::utils::HashPy;
+use crate::utils::{Dict, HashPy};
 
 #[pyclass]
 pub struct Anim {
     #[pyo3(get)]
     pub name: String,
+    pub extra: Option<Dict>,
     pub nodes: HashMap<HashPy<Node>, Trs>,
     #[pyo3(get)]
     pub scene: Py<Scene>,
