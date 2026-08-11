@@ -1,28 +1,83 @@
-use pyo3::{Bound, Py, pyclass, pymethods};
+use std::collections::HashMap;
+
+use pyo3::exceptions::PyValueError;
+use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
 
 use crate::math::{Quat, Vec3};
 use crate::scene::{Node, Scene};
+use crate::utils::HashPy;
 
 #[pyclass]
 pub struct Anim {
     #[pyo3(get)]
     pub name: String,
-    pub nodes: Vec<NodeAnim>,
+    pub nodes: HashMap<HashPy<Node>, Trs>,
     #[pyo3(get)]
     pub scene: Py<Scene>,
 }
 
+impl Anim {
+    fn with_node_trs(slf: Bound<Self>, node: Py<Node>, f: impl FnOnce(&mut Trs)) -> PyResult<()> {
+        let mut slf_brw = slf.borrow_mut();
+        if !node.get().scene.is(&slf_brw.scene) {
+            return Err(PyValueError::new_err("node does not belong to this anim's scene"));
+        }
+        f(slf_brw.nodes.entry(HashPy(node)).or_default());
+        Ok(())
+    }
+}
+
 #[pymethods]
 impl Anim {
-    #[pyo3(signature = (node, input, output, *, interpolation = Interpolation::Linear))]
-    pub fn add_translation(
+    #[pyo3(signature = (node, input, output, *, interpolation = None))]
+    fn add_translation(
         slf: Bound<Self>,
         node: Py<Node>,
         input: Vec<f64>,
         output: Vec<Vec3>,
-        interpolation: Interpolation,
-    ) {
-        todo!()
+        interpolation: Option<Interpolation>,
+    ) -> PyResult<()> {
+        Self::with_node_trs(slf, node, |trs| {
+            trs.translation = Some(Channel {
+                interpolation,
+                input,
+                output,
+            })
+        })
+    }
+
+    #[pyo3(signature = (node, input, output, *, interpolation = None))]
+    fn add_rotation(
+        slf: Bound<Self>,
+        node: Py<Node>,
+        input: Vec<f64>,
+        output: Vec<Quat>,
+        interpolation: Option<Interpolation>,
+    ) -> PyResult<()> {
+        Self::with_node_trs(slf, node, |trs| {
+            trs.rotation = Some(Channel {
+                interpolation,
+                input,
+                output,
+            })
+        })
+    }
+
+    #[pyo3(signature = (node, input, output, *, interpolation = None))]
+    fn add_scale(
+        slf: Bound<Self>,
+        node: Py<Node>,
+        input: Vec<f64>,
+        output: Vec<Vec3>,
+        interpolation: Option<Interpolation>,
+    ) -> PyResult<()> {
+        Self::with_node_trs(slf, node, |trs| {
+            trs.scale = Some(Channel {
+                interpolation,
+                input,
+                output,
+            })
+        })
     }
 }
 
@@ -34,15 +89,15 @@ pub enum Interpolation {
     CubicSpline,
 }
 
-pub struct NodeAnim {
-    pub node: usize,
-    pub translation: Option<Frames<Vec3>>,
-    pub rotation: Option<Frames<Quat>>,
-    pub scale: Option<Frames<Vec3>>,
+#[derive(Default)]
+pub struct Trs {
+    pub translation: Option<Channel<Vec3>>,
+    pub rotation: Option<Channel<Quat>>,
+    pub scale: Option<Channel<Vec3>>,
 }
 
-pub struct Frames<T> {
-    pub interpolation: Interpolation,
-    pub times: Vec<f64>,
-    pub values: Vec<T>,
+pub struct Channel<T> {
+    pub interpolation: Option<Interpolation>,
+    pub input: Vec<f64>,
+    pub output: Vec<T>,
 }

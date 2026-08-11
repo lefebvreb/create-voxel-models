@@ -3,6 +3,7 @@ use std::f64::consts::PI;
 use either::Either;
 use pyo3::{pyclass, pymethods};
 
+// todo(ben): is this even necessary?
 /// A 3-dimensional real column vector, with double precision components.
 #[pyclass(frozen, from_py_object)]
 #[derive(Copy, Clone)]
@@ -10,7 +11,6 @@ pub struct Vec3 {
     pub inner: glam::DVec3,
 }
 
-/// Is this even necessary?
 #[pymethods]
 impl Vec3 {
     /// A vector that only contains zeros.
