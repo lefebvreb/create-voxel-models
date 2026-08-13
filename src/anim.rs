@@ -100,7 +100,7 @@ impl<T> Channel<T> {
             Some(Interpolation::CubicSpline) => {
                 if input.len() * 3 != output.len() {
                     return Err(PyValueError::new_err(
-                        "outputs' array must be three times longer as the inputs' for cubic spline interpolation",
+                        "outputs' array must be 3 times longer as the inputs' for cubic spline interpolation",
                     ));
                 }
             }
