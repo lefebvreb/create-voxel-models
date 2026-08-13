@@ -64,10 +64,9 @@ impl Palette {
                 "ior must be 0.0, or greater than or equal to 1.0",
             ));
         }
-        if emissive.is_nan() || emissive < 0.0 {
+        if emissive < 0.0 {
             return Err(PyValueError::new_err("emissive must be greater than or equal to 0.0"));
         }
-
         let mut slf_brw = slf.borrow_mut();
         let index = slf_brw.colors.len();
         if index >= 255 {
