@@ -122,6 +122,15 @@ impl Quat {
         }
     }
 
+    /// Creates a quaternion that rotates `angle` degrees around `axis`.
+    /// `axis` does not need to be normalized.
+    #[staticmethod]
+    fn from_axis_angle(axis: Vec3, angle: f64) -> Self {
+        Self {
+            inner: glam::DQuat::from_axis_angle(axis.inner.normalize(), deg_to_rad(angle)),
+        }
+    }
+
     fn conjugate(&self) -> Self {
         Self {
             inner: self.inner.conjugate(),

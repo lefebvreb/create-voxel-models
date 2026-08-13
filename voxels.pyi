@@ -92,6 +92,12 @@ class Quat:
         """
     def conjugate(self, /) -> Quat: ...
     @staticmethod
+    def from_axis_angle(axis: Vec3, angle: float) -> Quat:
+        """
+        Creates a quaternion that rotates `angle` degrees around `axis`.
+        `axis` does not need to be normalized.
+        """
+    @staticmethod
     def from_rotation_x(angle: float) -> Quat:
         """
         Creates a quaternion that rotates `angle` degrees around the x axis.

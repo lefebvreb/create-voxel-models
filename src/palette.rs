@@ -50,6 +50,24 @@ impl Palette {
         transmission: f64,
         emissive: f64,
     ) -> PyResult<Py<Color>> {
+        if !(0.0..=1.0).contains(&roughness) {
+            return Err(PyValueError::new_err("roughness must be between 0.0 and 1.0"));
+        }
+        if !(0.0..=1.0).contains(&metallic) {
+            return Err(PyValueError::new_err("metallic must be between 0.0 and 1.0"));
+        }
+        if !(0.0..=1.0).contains(&transmission) {
+            return Err(PyValueError::new_err("transmission must be between 0.0 and 1.0"));
+        }
+        if !(ior == 0.0 || ior >= 1.0) {
+            return Err(PyValueError::new_err(
+                "ior must be 0.0, or greater than or equal to 1.0",
+            ));
+        }
+        if emissive.is_nan() || emissive < 0.0 {
+            return Err(PyValueError::new_err("emissive must be greater than or equal to 0.0"));
+        }
+
         let mut slf_brw = slf.borrow_mut();
         let index = slf_brw.colors.len();
         if index >= 255 {
