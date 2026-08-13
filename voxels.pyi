@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from os import PathLike
 from typing import Final, final
 
 @final
@@ -118,6 +119,7 @@ class Scene:
     def __new__(cls, /) -> Scene: ...
     def create_anim(self, /, name: str, *, extras: dict[str, str] |None = None) -> Anim: ...
     def create_root_node(self, /, name: str, *, extras: dict[str, str] |None = None) -> Node: ...
+    def export_glb(self, /, path: str |PathLike[str]) -> None: ...
 
 @final
 class Vec3:

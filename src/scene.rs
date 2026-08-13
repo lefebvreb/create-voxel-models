@@ -1,8 +1,10 @@
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::anim::Anim;
+use crate::glb::export_glb;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
 use crate::utils::Dict;
@@ -60,6 +62,10 @@ impl Scene {
         )?;
         slf.borrow_mut().anims.push(anim.clone_ref(slf.py()));
         Ok(anim)
+    }
+
+    fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
+        export_glb(slf, path)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
