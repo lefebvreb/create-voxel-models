@@ -95,11 +95,22 @@ pub struct Channel<T> {
 }
 
 impl<T> Channel<T> {
-    pub fn new(input: Vec<f64>, output: Vec<T>, interpolation: Option<Interpolation>) -> PyResult<Self> {
-        if input.len() != output.len() {
-            return Err(PyValueError::new_err(
-                "inputs' array must have the same length as the outputs'",
-            ));
+    fn new(input: Vec<f64>, output: Vec<T>, interpolation: Option<Interpolation>) -> PyResult<Self> {
+        match interpolation {
+            Some(Interpolation::CubicSpline) => {
+                if input.len() * 3 != output.len() {
+                    return Err(PyValueError::new_err(
+                        "outputs' array must be three times longer as the inputs' for cubic spline interpolation",
+                    ));
+                }
+            }
+            _ => {
+                if input.len() != output.len() {
+                    return Err(PyValueError::new_err(
+                        "outputs' array must have the same length as the inputs'",
+                    ));
+                }
+            }
         }
         Ok(Channel {
             input,

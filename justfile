@@ -16,7 +16,7 @@ clippy:
 stubs:
     maturin generate-stubs --out .
 
-# Compiles the project in debug mode, bundles it as a python module and runs all test scripts.
+# Compiles the project in debug mode, bundles it as a python module and runs all test scripts in a venv.
 test:
     maturin develop
     @for f in `ls tests`; do echo -e "\033[1mpython $f\033[0m" && .venv/bin/python tests/$f; done
