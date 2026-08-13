@@ -10,17 +10,16 @@ use crate::utils::Dict;
 #[pyclass]
 #[derive(Default)]
 pub struct Scene {
-    pub anims: HashMap<String, Py<Anim>>,
-    pub nodes: HashMap<String, Py<Node>>,
-    pub meshes: HashMap<String, Py<Mesh>>,
+    pub anims: Vec<Py<Anim>>,
+    pub nodes: Vec<Py<Node>>,
+    pub meshes: Vec<Py<Mesh>>,
 }
 
 impl Scene {
     fn add_node(slf: &Bound<Self>, node: Node) -> PyResult<Py<Node>> {
         let mut slf_brw = slf.borrow_mut();
-        let name = node.name.clone();
         let node = Py::new(slf.py(), node)?;
-        slf_brw.nodes.insert(name, node.clone_ref(slf.py()));
+        slf_brw.nodes.push(node.clone_ref(slf.py()));
         Ok(node)
     }
 }
@@ -53,20 +52,20 @@ impl Scene {
         let anim = Py::new(
             slf.py(),
             Anim {
-                name: name.clone(),
+                name,
                 extras,
                 nodes: HashMap::default(),
                 scene: slf.clone().unbind(),
             },
         )?;
-        slf.borrow_mut().anims.insert(name, anim.clone_ref(slf.py()));
+        slf.borrow_mut().anims.push(anim.clone_ref(slf.py()));
         Ok(anim)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.anims.values().try_for_each(|anim| visit.call(anim))?;
-        self.nodes.values().try_for_each(|node| visit.call(node))?;
-        self.meshes.values().try_for_each(|model| visit.call(model))
+        self.anims.iter().try_for_each(|anim| visit.call(anim))?;
+        self.nodes.iter().try_for_each(|node| visit.call(node))?;
+        self.meshes.iter().try_for_each(|model| visit.call(model))
     }
 
     fn __clear__(&mut self) {
@@ -129,7 +128,7 @@ impl Node {
             },
         )?;
         let mut scene = slf.get().scene.borrow_mut(slf.py());
-        scene.meshes.insert(name, mesh.clone_ref(slf.py()));
+        scene.meshes.push(mesh.clone_ref(slf.py()));
         Ok(mesh)
     }
 
