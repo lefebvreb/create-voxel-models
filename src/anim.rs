@@ -39,13 +39,8 @@ impl Anim {
         output: Vec<Vec3>,
         interpolation: Option<Interpolation>,
     ) -> PyResult<()> {
-        Self::with_node_trs(slf, node, |trs| {
-            trs.translation = Some(Channel {
-                interpolation,
-                input,
-                output,
-            })
-        })
+        let channel = Channel::new(input, output, interpolation)?;
+        Self::with_node_trs(slf, node, |trs| trs.translation = Some(channel))
     }
 
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
@@ -56,13 +51,8 @@ impl Anim {
         output: Vec<Quat>,
         interpolation: Option<Interpolation>,
     ) -> PyResult<()> {
-        Self::with_node_trs(slf, node, |trs| {
-            trs.rotation = Some(Channel {
-                interpolation,
-                input,
-                output,
-            })
-        })
+        let channel = Channel::new(input, output, interpolation)?;
+        Self::with_node_trs(slf, node, |trs| trs.rotation = Some(channel))
     }
 
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
@@ -73,13 +63,8 @@ impl Anim {
         output: Vec<Vec3>,
         interpolation: Option<Interpolation>,
     ) -> PyResult<()> {
-        Self::with_node_trs(slf, node, |trs| {
-            trs.scale = Some(Channel {
-                interpolation,
-                input,
-                output,
-            })
-        })
+        let channel = Channel::new(input, output, interpolation)?;
+        Self::with_node_trs(slf, node, |trs| trs.scale = Some(channel))
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
@@ -104,7 +89,22 @@ pub struct Trs {
 }
 
 pub struct Channel<T> {
-    pub interpolation: Option<Interpolation>,
     pub input: Vec<f64>,
     pub output: Vec<T>,
+    pub interpolation: Option<Interpolation>,
+}
+
+impl<T> Channel<T> {
+    pub fn new(input: Vec<f64>, output: Vec<T>, interpolation: Option<Interpolation>) -> PyResult<Self> {
+        if input.len() != output.len() {
+            return Err(PyValueError::new_err(
+                "inputs' array must have the same length as the outputs'",
+            ));
+        }
+        Ok(Channel {
+            input,
+            output,
+            interpolation,
+        })
+    }
 }
