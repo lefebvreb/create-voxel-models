@@ -7,6 +7,8 @@ class Anim:
     def add_scale(self, /, node: Node, input: Sequence[float], output: Sequence[Vec3], *, interpolation: Interpolation |None = None) -> None: ...
     def add_translation(self, /, node: Node, input: Sequence[float], output: Sequence[Vec3], *, interpolation: Interpolation |None = None) -> None: ...
     @property
+    def extras(self, /) -> dict[str, str] |None: ...
+    @property
     def name(self, /) -> str: ...
     @property
     def scene(self, /) -> Scene: ...
@@ -39,6 +41,8 @@ class Interpolation:
 @final
 class Mesh:
     @property
+    def extras(self, /) -> dict[str, str] |None: ...
+    @property
     def model(self, /) -> Model: ...
     @property
     def name(self, /) -> str: ...
@@ -56,8 +60,10 @@ class Model:
 
 @final
 class Node:
-    def add_model(self, /, name: str, model: Model, *, extra: dict[str, str] |None = None) -> Mesh: ...
-    def create_child_node(self, /, name: str, *, translation: Vec3 |None = None, rotation: Quat |None = None, scale: Vec3 |None = None, extra: dict[str, str] |None = None) -> Node: ...
+    def add_model(self, /, name: str, model: Model, *, extras: dict[str, str] |None = None) -> Mesh: ...
+    def create_child_node(self, /, name: str, *, translation: Vec3 |None = None, rotation: Quat |None = None, scale: Vec3 |None = None, extras: dict[str, str] |None = None) -> Node: ...
+    @property
+    def extras(self, /) -> dict[str, str] |None: ...
     @property
     def name(self, /) -> str: ...
     @property
@@ -88,24 +94,24 @@ class Quat:
     @staticmethod
     def from_rotation_x(angle: float) -> Quat:
         """
-        Creates a queternion that rotates `angle` degrees around the x axis.
+        Creates a quaternion that rotates `angle` degrees around the x axis.
         """
     @staticmethod
     def from_rotation_y(angle: float) -> Quat:
         """
-        Creates a queternion that rotates `angle` degrees around the y axis.
+        Creates a quaternion that rotates `angle` degrees around the y axis.
         """
     @staticmethod
     def from_rotation_z(angle: float) -> Quat:
         """
-        Creates a queternion that rotates `angle` degrees around the z axis.
+        Creates a quaternion that rotates `angle` degrees around the z axis.
         """
 
 @final
 class Scene:
     def __new__(cls, /) -> Scene: ...
-    def create_anim(self, /, name: str, *, extra: dict[str, str] |None = None) -> Anim: ...
-    def create_root_node(self, /, name: str, *, extra: dict[str, str] |None = None) -> Node: ...
+    def create_anim(self, /, name: str, *, extras: dict[str, str] |None = None) -> Anim: ...
+    def create_root_node(self, /, name: str, *, extras: dict[str, str] |None = None) -> Node: ...
 
 @final
 class Vec3:
@@ -126,7 +132,7 @@ class Vec3:
         """
     def __mul__(self, other: object, /) -> Vec3:
         """
-        Component-wise subtraction when `other` is a `Vec3`.
+        Component-wise multiplication when `other` is a `Vec3`.
         Otherwise just scales `self` by `other`, which is then required to be a `float`.
         """
     def __neg__(self, /) -> Vec3: ...

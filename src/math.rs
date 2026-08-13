@@ -3,7 +3,7 @@ use std::f64::consts::PI;
 use either::Either;
 use pyo3::{pyclass, pymethods};
 
-// todo(ben): is this even necessary?
+// todo(ben): is this even necessary? Should python just use float 3-tuples instead?
 /// A 3-dimensional real column vector, with double precision components.
 #[pyclass(frozen, from_py_object)]
 #[derive(Copy, Clone)]
@@ -65,7 +65,7 @@ impl Vec3 {
         }
     }
 
-    /// Component-wise subtraction when `other` is a `Vec3`.
+    /// Component-wise multiplication when `other` is a `Vec3`.
     /// Otherwise just scales `self` by `other`, which is then required to be a `float`.
     fn __mul__(&self, other: Either<f64, Self>) -> Self {
         Self {
@@ -98,7 +98,7 @@ impl Quat {
         inner: glam::DQuat::IDENTITY,
     };
 
-    /// Creates a queternion that rotates `angle` degrees around the x axis.
+    /// Creates a quaternion that rotates `angle` degrees around the x axis.
     #[staticmethod]
     fn from_rotation_x(angle: f64) -> Self {
         Self {
@@ -106,7 +106,7 @@ impl Quat {
         }
     }
 
-    /// Creates a queternion that rotates `angle` degrees around the y axis.
+    /// Creates a quaternion that rotates `angle` degrees around the y axis.
     #[staticmethod]
     fn from_rotation_y(angle: f64) -> Self {
         Self {
@@ -114,7 +114,7 @@ impl Quat {
         }
     }
 
-    /// Creates a queternion that rotates `angle` degrees around the z axis.
+    /// Creates a quaternion that rotates `angle` degrees around the z axis.
     #[staticmethod]
     fn from_rotation_z(angle: f64) -> Self {
         Self {

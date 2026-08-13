@@ -11,7 +11,8 @@ use crate::utils::{Dict, HashPy};
 pub struct Anim {
     #[pyo3(get)]
     pub name: String,
-    pub extra: Option<Dict>,
+    #[pyo3(get)]
+    pub extras: Option<Dict>,
     pub nodes: HashMap<HashPy<Node>, Trs>,
     #[pyo3(get)]
     pub scene: Py<Scene>,

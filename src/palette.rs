@@ -1,4 +1,4 @@
-use pyo3::exceptions::PyIndexError;
+use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(frozen)]
@@ -53,7 +53,7 @@ impl Palette {
         let mut slf_brw = slf.borrow_mut();
         let index = slf_brw.colors.len();
         if index >= 255 {
-            return Err(PyIndexError::new_err(
+            return Err(PyValueError::new_err(
                 "palette already contains 255 colors, which is the maximum permitted",
             ));
         }

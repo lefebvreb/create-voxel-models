@@ -32,8 +32,8 @@ impl Scene {
         Self::default()
     }
 
-    #[pyo3(signature = (name, *, extra = None))]
-    fn create_root_node(slf: Bound<Self>, name: String, extra: Option<Dict>) -> PyResult<Py<Node>> {
+    #[pyo3(signature = (name, *, extras = None))]
+    fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
         Self::add_node(
             &slf,
             Node {
@@ -41,20 +41,20 @@ impl Scene {
                 translation: None,
                 rotation: None,
                 scale: None,
-                extra: extra.unwrap_or_default(),
+                extras,
                 parent: None,
                 scene: slf.clone().unbind(),
             },
         )
     }
 
-    #[pyo3(signature = (name, *, extra = None))]
-    fn create_anim(slf: Bound<Self>, name: String, extra: Option<Dict>) -> PyResult<Py<Anim>> {
+    #[pyo3(signature = (name, *, extras = None))]
+    fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
         let anim = Py::new(
             slf.py(),
             Anim {
                 name: name.clone(),
-                extra,
+                extras,
                 nodes: HashMap::default(),
                 scene: slf.clone().unbind(),
             },
@@ -83,7 +83,8 @@ pub struct Node {
     pub translation: Option<Vec3>,
     pub rotation: Option<Quat>,
     pub scale: Option<Vec3>,
-    pub extra: Dict,
+    #[pyo3(get)]
+    pub extras: Option<Dict>,
     #[pyo3(get)]
     pub parent: Option<Py<Node>>,
     #[pyo3(get)]
@@ -92,14 +93,14 @@ pub struct Node {
 
 #[pymethods]
 impl Node {
-    #[pyo3(signature = (name, *, translation = None, rotation = None, scale = None, extra = None))]
+    #[pyo3(signature = (name, *, translation = None, rotation = None, scale = None, extras = None))]
     fn create_child_node(
         slf: Bound<Self>,
         name: String,
         translation: Option<Vec3>,
         rotation: Option<Quat>,
         scale: Option<Vec3>,
-        extra: Option<Dict>,
+        extras: Option<Dict>,
     ) -> PyResult<Py<Node>> {
         let scene = slf.get().scene.bind(slf.py());
         Scene::add_node(
@@ -109,20 +110,20 @@ impl Node {
                 translation,
                 rotation,
                 scale,
-                extra: extra.unwrap_or_default(),
+                extras,
                 parent: Some(slf.clone().unbind()),
                 scene: scene.clone().unbind(),
             },
         )
     }
 
-    #[pyo3(signature = (name, model, *, extra = None))]
-    fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extra: Option<Dict>) -> PyResult<Py<Mesh>> {
+    #[pyo3(signature = (name, model, *, extras = None))]
+    fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
         let mesh = Py::new(
             slf.py(),
             Mesh {
                 name: name.clone(),
-                extra: extra.unwrap_or_default(),
+                extras,
                 parent: slf.clone().unbind(),
                 model,
             },
@@ -142,7 +143,8 @@ impl Node {
 pub struct Mesh {
     #[pyo3(get)]
     pub name: String,
-    pub extra: Dict,
+    #[pyo3(get)]
+    pub extras: Option<Dict>,
     #[pyo3(get)]
     pub parent: Py<Node>,
     #[pyo3(get)]
