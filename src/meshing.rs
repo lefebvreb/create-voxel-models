@@ -189,7 +189,8 @@ impl PrimitiveBuilder {
         self.positions.extend(corners);
         self.normals.extend([normal; 4]);
         self.uvs.extend([uv; 4]);
-        self.indices.extend([base, base + 1, base + 2, base, base + 2, base + 3]);
+        self.indices
+            .extend([base, base + 1, base + 2, base, base + 2, base + 3]);
     }
 
     fn into_primitive(self, material_index: usize) -> Primitive {
@@ -213,7 +214,11 @@ fn build_mesh(dims: [usize; 3], data: &[u8], colors: &[ColorProps], layout: &Pal
 
     let mut builders: Vec<PrimitiveBuilder> = (0..layout.buckets.len()).map(|_| PrimitiveBuilder::default()).collect();
     for d in 0..3 {
-        let basis = Basis { d, u_axis: (d + 1) % 3, v_axis: (d + 2) % 3 };
+        let basis = Basis {
+            d,
+            u_axis: (d + 1) % 3,
+            v_axis: (d + 2) % 3,
+        };
         mesh_axis(basis, dims, &voxel_at, &is_opaque, layout, &mut builders);
     }
 
@@ -295,7 +300,12 @@ fn face_visible(a_id: u8, neighbor: Option<u8>, is_opaque: &impl Fn(u8) -> bool)
 
 /// Consumes a 2D mask of (color id or empty), emitting one maximal rectangle per contiguous
 /// same-id region via the standard greedy-growth sweep.
-fn greedy_rects(mask: &mut [Option<u8>], dim_u: usize, dim_v: usize, mut emit: impl FnMut(usize, usize, usize, usize, u8)) {
+fn greedy_rects(
+    mask: &mut [Option<u8>],
+    dim_u: usize,
+    dim_v: usize,
+    mut emit: impl FnMut(usize, usize, usize, usize, u8),
+) {
     for v in 0..dim_v {
         let mut u = 0;
         while u < dim_u {
@@ -428,8 +438,14 @@ mod tests {
     #[test]
     fn distinct_ior_creates_separate_buckets() {
         let colors = vec![
-            ColorProps { ior: 1.0, ..color((255, 0, 0), 0.0) },
-            ColorProps { ior: 1.5, ..color((0, 255, 0), 0.0) },
+            ColorProps {
+                ior: 1.0,
+                ..color((255, 0, 0), 0.0)
+            },
+            ColorProps {
+                ior: 1.5,
+                ..color((0, 255, 0), 0.0)
+            },
         ];
         let layout = build_palette_layout(&colors);
 
