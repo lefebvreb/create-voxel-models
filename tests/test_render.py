@@ -2,11 +2,11 @@ import shutil
 import struct
 import tempfile
 from pathlib import Path
+from typing import Callable
 
-from voxels import CameraAngle, Interpolation, Model, Palette, Quat, Scene, Vec3
+from voxels import CameraAngle, Interpolation, Model, Palette, Quat, RenderOutput, Scene, Vec3
 
-
-def assert_raises_value_error(f):
+def assert_raises_value_error(f: Callable[[], RenderOutput]):
     try:
         f()
     except ValueError:
@@ -32,13 +32,11 @@ grandchild.add_model("cube", model)
 anim = scene.create_anim("wiggle")
 anim.add_rotation(child, [0.0, 1.0, 2.0], [Quat.IDENTITY, Quat.from_rotation_y(180), Quat.IDENTITY], interpolation=Interpolation.Linear)
 
-
 def assert_valid_png(path: Path, expected_size: int = 512):
     data = path.read_bytes()
     assert data[:8] == b"\x89PNG\r\n\x1a\n", f"not a PNG: {path}"
     width, height = struct.unpack_from(">II", data, 16)
     assert (width, height) == (expected_size, expected_size)
-
 
 angles = [CameraAngle(0.0, 0.0), CameraAngle(90.0, 30.0, zoom=1.5)]
 
