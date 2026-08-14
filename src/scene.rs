@@ -31,12 +31,12 @@ impl Scene {
 #[pymethods]
 impl Scene {
     #[new]
-    fn __new__() -> Self {
+    pub fn __new__() -> Self {
         Self::default()
     }
 
     #[pyo3(signature = (name, *, extras = None))]
-    pub(crate) fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
+    pub fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
         Self::add_node(
             &slf,
             Node {
@@ -52,7 +52,7 @@ impl Scene {
     }
 
     #[pyo3(signature = (name, *, extras = None))]
-    fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
+    pub fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
         let anim = Py::new(
             slf.py(),
             Anim {
@@ -66,7 +66,7 @@ impl Scene {
         Ok(anim)
     }
 
-    fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
+    pub fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
         let blob = export_glb(slf)?;
         write(path, blob)?;
         Ok(())
@@ -74,7 +74,7 @@ impl Scene {
 
     #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None, background = None, output_dir = None))]
     #[allow(clippy::too_many_arguments)]
-    fn render(
+    pub fn render(
         slf: Bound<Self>,
         angles: Vec<CameraAngle>,
         times: Vec<f64>,
@@ -118,7 +118,7 @@ pub struct Node {
 #[pymethods]
 impl Node {
     #[pyo3(signature = (name, *, translation = None, rotation = None, scale = None, extras = None))]
-    fn create_child_node(
+    pub fn create_child_node(
         slf: Bound<Self>,
         name: String,
         translation: Option<Vec3>,
@@ -142,12 +142,7 @@ impl Node {
     }
 
     #[pyo3(signature = (name, model, *, extras = None))]
-    pub(crate) fn add_model(
-        slf: Bound<Self>,
-        name: String,
-        model: Py<Model>,
-        extras: Option<Dict>,
-    ) -> PyResult<Py<Mesh>> {
+    pub fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
         let mesh = Py::new(
             slf.py(),
             Mesh {

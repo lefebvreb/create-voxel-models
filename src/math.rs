@@ -15,51 +15,51 @@ pub struct Vec3 {
 impl Vec3 {
     /// A vector that only contains zeros.
     #[classattr]
-    const ZERO: Self = Self {
+    pub const ZERO: Self = Self {
         inner: glam::DVec3::ZERO,
     };
 
     /// A vector that only contains ones.
     #[classattr]
-    const ONES: Self = Self {
+    pub const ONES: Self = Self {
         inner: glam::DVec3::ONE,
     };
 
     #[new]
-    fn __new__(x: f64, y: f64, z: f64) -> Self {
+    pub fn __new__(x: f64, y: f64, z: f64) -> Self {
         Self {
             inner: glam::DVec3::new(x, y, z),
         }
     }
 
     #[getter]
-    fn x(&self) -> f64 {
+    pub fn x(&self) -> f64 {
         self.inner.x
     }
 
     #[getter]
-    fn y(&self) -> f64 {
+    pub fn y(&self) -> f64 {
         self.inner.y
     }
 
     #[getter]
-    fn z(&self) -> f64 {
+    pub fn z(&self) -> f64 {
         self.inner.z
     }
 
-    fn __neg__(&self) -> Self {
+    pub fn __neg__(&self) -> Self {
         Self { inner: -self.inner }
     }
 
     /// Component-wise addition, `other` must be a `Vec3`.
-    fn __add__(&self, other: Self) -> Self {
+    pub fn __add__(&self, other: Self) -> Self {
         Self {
             inner: self.inner + other.inner,
         }
     }
 
     /// Component-wise subtraction, `other` must be a `Vec3`.
-    fn __sub__(&self, other: Self) -> Self {
+    pub fn __sub__(&self, other: Self) -> Self {
         Self {
             inner: self.inner - other.inner,
         }
@@ -67,7 +67,7 @@ impl Vec3 {
 
     /// Component-wise multiplication when `other` is a `Vec3`.
     /// Otherwise just scales `self` by `other`, which is then required to be a `float`.
-    fn __mul__(&self, other: Either<f64, Self>) -> Self {
+    pub fn __mul__(&self, other: Either<f64, Self>) -> Self {
         Self {
             inner: match other {
                 Either::Left(scale) => self.inner * scale,
@@ -75,8 +75,9 @@ impl Vec3 {
             },
         }
     }
+
     /// Scales `self` by `other⁻¹`, which is required to be a `float`.
-    fn __truediv__(&self, other: f64) -> Self {
+    pub fn __truediv__(&self, other: f64) -> Self {
         Self {
             inner: self.inner / other,
         }
@@ -94,13 +95,13 @@ pub struct Quat {
 impl Quat {
     /// The identity quaternion, equivalent to no rotation.
     #[classattr]
-    const IDENTITY: Self = Self {
+    pub const IDENTITY: Self = Self {
         inner: glam::DQuat::IDENTITY,
     };
 
     /// Creates a quaternion that rotates `angle` degrees around the x axis.
     #[staticmethod]
-    fn from_rotation_x(angle: f64) -> Self {
+    pub fn from_rotation_x(angle: f64) -> Self {
         Self {
             inner: glam::DQuat::from_rotation_x(deg_to_rad(angle)),
         }
@@ -108,7 +109,7 @@ impl Quat {
 
     /// Creates a quaternion that rotates `angle` degrees around the y axis.
     #[staticmethod]
-    fn from_rotation_y(angle: f64) -> Self {
+    pub fn from_rotation_y(angle: f64) -> Self {
         Self {
             inner: glam::DQuat::from_rotation_y(deg_to_rad(angle)),
         }
@@ -116,7 +117,7 @@ impl Quat {
 
     /// Creates a quaternion that rotates `angle` degrees around the z axis.
     #[staticmethod]
-    fn from_rotation_z(angle: f64) -> Self {
+    pub fn from_rotation_z(angle: f64) -> Self {
         Self {
             inner: glam::DQuat::from_rotation_z(deg_to_rad(angle)),
         }
@@ -125,20 +126,20 @@ impl Quat {
     /// Creates a quaternion that rotates `angle` degrees around `axis`.
     /// `axis` does not need to be normalized.
     #[staticmethod]
-    fn from_axis_angle(axis: Vec3, angle: f64) -> Self {
+    pub fn from_axis_angle(axis: Vec3, angle: f64) -> Self {
         Self {
             inner: glam::DQuat::from_axis_angle(axis.inner.normalize(), deg_to_rad(angle)),
         }
     }
 
-    fn conjugate(&self) -> Self {
+    pub fn conjugate(&self) -> Self {
         Self {
             inner: self.inner.conjugate(),
         }
     }
 
     /// Quaternion product, `other` must be a `Quat`.
-    fn __mul__(&self, other: Self) -> Self {
+    pub fn __mul__(&self, other: Self) -> Self {
         Self {
             inner: self.inner * other.inner,
         }

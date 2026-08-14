@@ -41,7 +41,7 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    fn __new__(dimensions: Int3, palette: Py<Palette>) -> PyResult<Self> {
+    pub fn __new__(dimensions: Int3, palette: Py<Palette>) -> PyResult<Self> {
         let (dx, dy, dz) = dimensions;
         if dx > 256 || dy > 256 || dz > 256 {
             return Err(PyValueError::new_err(
@@ -56,7 +56,7 @@ impl Model {
     }
 
     #[pyo3(signature = (position, color = None))]
-    fn put(&mut self, position: Int3, color: Option<Bound<Color>>) -> PyResult<()> {
+    pub fn put(&mut self, position: Int3, color: Option<Bound<Color>>) -> PyResult<()> {
         let index = self.pos_to_index(position)?;
         let color = self.check_color_get_id(color)?;
         self.data[index] = color;
@@ -64,7 +64,7 @@ impl Model {
     }
 
     #[pyo3(signature = (angles, *, background = None, output_dir = None))]
-    fn render(
+    pub fn render(
         slf: Bound<Self>,
         angles: Vec<CameraAngle>,
         background: Option<(u8, u8, u8)>,

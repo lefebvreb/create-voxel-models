@@ -32,7 +32,7 @@ impl Anim {
 #[pymethods]
 impl Anim {
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
-    fn add_translation(
+    pub fn add_translation(
         slf: Bound<Self>,
         node: Py<Node>,
         input: Vec<f64>,
@@ -44,7 +44,7 @@ impl Anim {
     }
 
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
-    fn add_rotation(
+    pub fn add_rotation(
         slf: Bound<Self>,
         node: Py<Node>,
         input: Vec<f64>,
@@ -56,7 +56,7 @@ impl Anim {
     }
 
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
-    fn add_scale(
+    pub fn add_scale(
         slf: Bound<Self>,
         node: Py<Node>,
         input: Vec<f64>,
