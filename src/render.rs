@@ -7,6 +7,7 @@ use bevy::asset::io::{AssetSourceBuilder, AssetSourceId};
 use bevy::asset::{LoadState, RenderAssetUsages};
 use bevy::camera::RenderTarget;
 use bevy::camera::primitives::Aabb;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::gltf::Gltf;
 use bevy::image::Image;
 use bevy::light::{DirectionalLight, GlobalAmbientLight};
@@ -110,6 +111,11 @@ pub fn render(
             },
             RenderTarget::from(target_handle.clone()),
             Projection::Perspective(PerspectiveProjection::default()),
+            // Bypass filmic tonemapping: an agent inspecting colors for correctness needs the
+            // material colors it authored, not a hue-shifting display curve. `TonyMcMapface`
+            // (Bevy's default) would also silently render everything wrong without the
+            // `tonemapping_luts` feature, which we deliberately don't enable.
+            Tonemapping::None,
             Transform::IDENTITY,
         ))
         .id();
