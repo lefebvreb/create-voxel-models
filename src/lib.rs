@@ -2,6 +2,7 @@ use pyo3::pymodule;
 
 mod anim;
 mod glb;
+mod gltf;
 mod math;
 mod meshing;
 mod model;

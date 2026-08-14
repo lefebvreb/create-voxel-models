@@ -1,8 +1,640 @@
-use pyo3::{Bound, PyResult};
+use std::collections::{BTreeSet, HashMap};
 
-use crate::scene::Scene;
+use pyo3::exceptions::PyValueError;
+use pyo3::{Bound, Py, PyResult};
+
+use crate::anim::{Anim, Interpolation, Trs};
+use crate::gltf;
+use crate::meshing::{self, MaterialData, PaletteData};
+use crate::model::Model;
+use crate::palette::Palette;
+use crate::scene::{Mesh, Node, Scene};
+use crate::utils::HashPy;
 
 pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
-    let _ = scene;
-    todo!()
+    let py = scene.py();
+    let scene_ref = scene.borrow();
+
+    let mut root = gltf::Root::default();
+    root.samplers.push(gltf::Sampler {
+        mag_filter: gltf::FILTER_NEAREST,
+        min_filter: gltf::FILTER_NEAREST,
+        wrap_s: gltf::WRAP_CLAMP_TO_EDGE,
+        wrap_t: gltf::WRAP_CLAMP_TO_EDGE,
+    });
+
+    let mut writer = BinWriter::default();
+    let mut extensions_used = BTreeSet::new();
+    let mut palette_cache: HashMap<HashPy<Palette>, Vec<u32>> = HashMap::new();
+    let mut model_cache: HashMap<HashPy<Model>, Vec<gltf::Primitive>> = HashMap::new();
+
+    let (mut gltf_nodes, node_index, roots) = build_nodes(py, &scene_ref.nodes);
+
+    for (node, meshes) in group_meshes_by_node(py, &scene_ref.meshes) {
+        let mut primitives = Vec::new();
+        for mesh in &meshes {
+            let model = mesh.borrow(py).model.clone_ref(py);
+            primitives.extend(get_or_build_model_primitives(
+                py,
+                &model,
+                &mut model_cache,
+                &mut palette_cache,
+                &mut root,
+                &mut writer,
+                &mut extensions_used,
+            )?);
+        }
+        if primitives.is_empty() {
+            continue;
+        }
+        let first = meshes[0].borrow(py);
+        let mesh_index = root.meshes.len() as u32;
+        root.meshes.push(gltf::Mesh {
+            name: Some(first.name.clone()),
+            primitives,
+            extras: first.extras.clone(),
+        });
+        let node_idx = node_index[&HashPy(node)] as usize;
+        gltf_nodes[node_idx].mesh = Some(mesh_index);
+    }
+
+    root.nodes = gltf_nodes;
+    root.scenes = vec![gltf::Scene { nodes: roots }];
+    root.scene = Some(0);
+
+    for anim in &scene_ref.anims {
+        root.animations
+            .push(build_animation(py, anim, &node_index, &mut writer));
+    }
+
+    root.accessors = writer.accessors;
+    root.buffer_views = writer.buffer_views;
+    if !writer.bytes.is_empty() {
+        root.buffers.push(gltf::Buffer {
+            byte_length: writer.bytes.len() as u32,
+        });
+    }
+    root.extensions_used = extensions_used.into_iter().map(String::from).collect();
+
+    let json_bytes = serde_json::to_vec(&root)
+        .map_err(|_| PyValueError::new_err("scene contains a non-finite value that cannot be exported to glTF"))?;
+    Ok(write_glb_container(&json_bytes, &writer.bytes))
+}
+
+// --- Node hierarchy: `Scene.nodes` is a flat Vec with parent back-links, not a tree ---
+
+fn build_nodes(py: pyo3::Python, nodes: &[Py<Node>]) -> (Vec<gltf::Node>, HashMap<HashPy<Node>, u32>, Vec<u32>) {
+    let node_index: HashMap<HashPy<Node>, u32> = nodes
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (HashPy(node.clone_ref(py)), i as u32))
+        .collect();
+
+    let mut gltf_nodes: Vec<gltf::Node> = nodes
+        .iter()
+        .map(|node| {
+            let node_ref = node.get();
+            gltf::Node {
+                name: Some(node_ref.name.clone()),
+                translation: node_ref.translation.map(|v| v.inner.as_vec3().to_array()),
+                rotation: node_ref.rotation.map(|q| q.inner.as_quat().to_array()),
+                scale: node_ref.scale.map(|v| v.inner.as_vec3().to_array()),
+                extras: node_ref.extras.clone(),
+                ..Default::default()
+            }
+        })
+        .collect();
+
+    let mut roots = Vec::new();
+    for node in nodes {
+        let idx = node_index[&HashPy(node.clone_ref(py))];
+        match &node.get().parent {
+            Some(parent) => {
+                let parent_idx = node_index[&HashPy(parent.clone_ref(py))] as usize;
+                gltf_nodes[parent_idx].children.push(idx);
+            }
+            None => roots.push(idx),
+        }
+    }
+
+    (gltf_nodes, node_index, roots)
+}
+
+fn group_meshes_by_node(py: pyo3::Python, meshes: &[Py<Mesh>]) -> Vec<(Py<Node>, Vec<Py<Mesh>>)> {
+    let mut order: Vec<HashPy<Node>> = Vec::new();
+    let mut groups: HashMap<HashPy<Node>, Vec<Py<Mesh>>> = HashMap::new();
+    for mesh in meshes {
+        let parent = HashPy(mesh.borrow(py).parent.clone_ref(py));
+        if !groups.contains_key(&parent) {
+            order.push(HashPy(parent.0.clone_ref(py)));
+        }
+        groups.entry(parent).or_default().push(mesh.clone_ref(py));
+    }
+    order
+        .into_iter()
+        .map(|key| {
+            let meshes = groups.remove(&key).expect("key was just inserted above");
+            (key.0, meshes)
+        })
+        .collect()
+}
+
+// --- Model/Palette dedup, keyed by pointer identity via the existing `HashPy` helper ---
+
+fn get_or_build_palette_materials(
+    py: pyo3::Python,
+    palette: &Py<Palette>,
+    palette_cache: &mut HashMap<HashPy<Palette>, Vec<u32>>,
+    root: &mut gltf::Root,
+    writer: &mut BinWriter,
+    extensions_used: &mut BTreeSet<&'static str>,
+) -> PyResult<Vec<u32>> {
+    let key = HashPy(palette.clone_ref(py));
+    if let Some(indices) = palette_cache.get(&key) {
+        return Ok(indices.clone());
+    }
+    let data: PaletteData = meshing::export_palette(palette.bind(py).clone())?;
+    let mut indices = Vec::with_capacity(data.materials.len());
+    for material in &data.materials {
+        indices.push(build_material(material, root, writer, extensions_used)?);
+    }
+    palette_cache.insert(key, indices.clone());
+    Ok(indices)
+}
+
+fn get_or_build_model_primitives(
+    py: pyo3::Python,
+    model: &Py<Model>,
+    model_cache: &mut HashMap<HashPy<Model>, Vec<gltf::Primitive>>,
+    palette_cache: &mut HashMap<HashPy<Palette>, Vec<u32>>,
+    root: &mut gltf::Root,
+    writer: &mut BinWriter,
+    extensions_used: &mut BTreeSet<&'static str>,
+) -> PyResult<Vec<gltf::Primitive>> {
+    let key = HashPy(model.clone_ref(py));
+    if let Some(primitives) = model_cache.get(&key) {
+        return Ok(primitives.clone());
+    }
+    let palette = model.borrow(py).palette.clone_ref(py);
+    let material_indices = get_or_build_palette_materials(py, &palette, palette_cache, root, writer, extensions_used)?;
+    let mesh_data = meshing::export_model(model.bind(py).clone())?;
+
+    let mut primitives = Vec::with_capacity(mesh_data.primitives.len());
+    for primitive in &mesh_data.primitives {
+        let position = writer.write_positions(&primitive.positions);
+        let normal = writer.write_vec3s_no_bounds(&primitive.normals, gltf::TARGET_ARRAY_BUFFER);
+        let texcoord_0 = writer.write_vec2s(&primitive.uvs);
+        let indices = writer.write_indices(&primitive.indices);
+        primitives.push(gltf::Primitive {
+            attributes: gltf::Attributes {
+                position,
+                normal,
+                texcoord_0,
+            },
+            indices,
+            material: material_indices[primitive.material_index],
+        });
+    }
+
+    model_cache.insert(key, primitives.clone());
+    Ok(primitives)
+}
+
+// --- MaterialData -> glTF material/texture/image ---
+
+fn build_material(
+    material: &MaterialData,
+    root: &mut gltf::Root,
+    writer: &mut BinWriter,
+    extensions_used: &mut BTreeSet<&'static str>,
+) -> PyResult<u32> {
+    let width = material.atlas_width;
+    let height = material.atlas_height;
+
+    let base_color_bytes: Vec<u8> = material.base_color.iter().flatten().copied().collect();
+    let base_color_texture = push_texture(root, writer, encode_rgb_png(width, height, &base_color_bytes)?);
+
+    let metallic_roughness_bytes: Vec<u8> = material
+        .metallic_roughness
+        .iter()
+        .flat_map(|&[roughness, metallic]| [0, roughness, metallic])
+        .collect();
+    let metallic_roughness_texture =
+        push_texture(root, writer, encode_rgb_png(width, height, &metallic_roughness_bytes)?);
+
+    let mut extensions = gltf::MaterialExtensions::default();
+
+    if material.ior != 1.5 {
+        extensions.ior = Some(gltf::KhrMaterialsIor { ior: material.ior });
+        extensions_used.insert("KHR_materials_ior");
+    }
+
+    if material.transmission.iter().any(|&t| t != 0) {
+        let transmission_texture = push_texture(root, writer, encode_gray_png(width, height, &material.transmission)?);
+        extensions.transmission = Some(gltf::KhrMaterialsTransmission {
+            transmission_factor: 1.0,
+            transmission_texture: gltf::TextureInfo {
+                index: transmission_texture,
+            },
+        });
+        extensions_used.insert("KHR_materials_transmission");
+    }
+
+    let (emissive_factor, emissive_texture) = if material.emissive != 0.0 {
+        extensions.emissive_strength = Some(gltf::KhrMaterialsEmissiveStrength {
+            emissive_strength: material.emissive,
+        });
+        extensions_used.insert("KHR_materials_emissive_strength");
+        (
+            Some([1.0, 1.0, 1.0]),
+            Some(gltf::TextureInfo {
+                index: base_color_texture,
+            }),
+        )
+    } else {
+        (None, None)
+    };
+
+    let index = root.materials.len() as u32;
+    root.materials.push(gltf::Material {
+        name: None,
+        pbr_metallic_roughness: gltf::PbrMetallicRoughness {
+            base_color_texture: Some(gltf::TextureInfo {
+                index: base_color_texture,
+            }),
+            metallic_roughness_texture: Some(gltf::TextureInfo {
+                index: metallic_roughness_texture,
+            }),
+        },
+        emissive_factor,
+        emissive_texture,
+        extensions: if extensions.is_empty() { None } else { Some(extensions) },
+    });
+    Ok(index)
+}
+
+fn push_texture(root: &mut gltf::Root, writer: &mut BinWriter, png_bytes: Vec<u8>) -> u32 {
+    let buffer_view = writer.push_view(&png_bytes, None);
+    let image_index = root.images.len() as u32;
+    root.images.push(gltf::Image {
+        mime_type: "image/png".to_string(),
+        buffer_view,
+    });
+    let texture_index = root.textures.len() as u32;
+    root.textures.push(gltf::Texture {
+        sampler: 0,
+        source: image_index,
+    });
+    texture_index
+}
+
+fn encode_rgb_png(width: u32, height: u32, pixels: &[u8]) -> PyResult<Vec<u8>> {
+    encode_png(width, height, pixels, png::ColorType::Rgb)
+}
+
+fn encode_gray_png(width: u32, height: u32, pixels: &[u8]) -> PyResult<Vec<u8>> {
+    encode_png(width, height, pixels, png::ColorType::Grayscale)
+}
+
+fn encode_png(width: u32, height: u32, pixels: &[u8], color: png::ColorType) -> PyResult<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut encoder = png::Encoder::new(&mut bytes, width, height);
+    encoder.set_color(color);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder
+        .write_header()
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    writer
+        .write_image_data(pixels)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    writer.finish().map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(bytes)
+}
+
+// --- Animations ---
+
+fn build_animation(
+    py: pyo3::Python,
+    anim: &Py<Anim>,
+    node_index: &HashMap<HashPy<Node>, u32>,
+    writer: &mut BinWriter,
+) -> gltf::Animation {
+    let anim_ref = anim.borrow(py);
+    let mut channels = Vec::new();
+    let mut samplers = Vec::new();
+
+    let mut nodes: Vec<(&HashPy<Node>, &Trs)> = anim_ref.nodes.iter().collect();
+    nodes.sort_by_key(|(node, _)| node_index[node]);
+
+    for (node, trs) in nodes {
+        let node_idx = node_index[node];
+        if let Some(channel) = &trs.translation {
+            push_channel(
+                &mut samplers,
+                &mut channels,
+                writer,
+                node_idx,
+                "translation",
+                channel,
+                |v| v.inner.as_vec3().to_array(),
+            );
+        }
+        if let Some(channel) = &trs.rotation {
+            push_channel(
+                &mut samplers,
+                &mut channels,
+                writer,
+                node_idx,
+                "rotation",
+                channel,
+                |q| q.inner.as_quat().to_array(),
+            );
+        }
+        if let Some(channel) = &trs.scale {
+            push_channel(&mut samplers, &mut channels, writer, node_idx, "scale", channel, |v| {
+                v.inner.as_vec3().to_array()
+            });
+        }
+    }
+
+    gltf::Animation {
+        name: Some(anim_ref.name.clone()),
+        channels,
+        samplers,
+        extras: anim_ref.extras.clone(),
+    }
+}
+
+fn push_channel<T, const N: usize>(
+    samplers: &mut Vec<gltf::AnimationSampler>,
+    channels: &mut Vec<gltf::AnimationChannel>,
+    writer: &mut BinWriter,
+    node_idx: u32,
+    path: &str,
+    channel: &crate::anim::Channel<T>,
+    to_array: impl Fn(&T) -> [f32; N],
+) {
+    let input = writer.write_scalar_times(&channel.input);
+    let values: Vec<[f32; N]> = channel.output.iter().map(to_array).collect();
+    let output = writer.write_floatn(&values, None);
+
+    let interpolation = match channel.interpolation {
+        None | Some(Interpolation::Linear) => None,
+        Some(Interpolation::Step) => Some("STEP".to_string()),
+        Some(Interpolation::CubicSpline) => Some("CUBICSPLINE".to_string()),
+    };
+
+    let sampler_idx = samplers.len() as u32;
+    samplers.push(gltf::AnimationSampler {
+        input,
+        output,
+        interpolation,
+    });
+    channels.push(gltf::AnimationChannel {
+        sampler: sampler_idx,
+        target: gltf::AnimationChannelTarget {
+            node: node_idx,
+            path: path.to_string(),
+        },
+    });
+}
+
+// --- Binary buffer accumulator ---
+
+#[derive(Default)]
+struct BinWriter {
+    bytes: Vec<u8>,
+    buffer_views: Vec<gltf::BufferView>,
+    accessors: Vec<gltf::Accessor>,
+}
+
+impl BinWriter {
+    fn push_view(&mut self, data: &[u8], target: Option<u32>) -> u32 {
+        while !self.bytes.len().is_multiple_of(4) {
+            self.bytes.push(0);
+        }
+        let byte_offset = self.bytes.len() as u32;
+        self.bytes.extend_from_slice(data);
+        let index = self.buffer_views.len() as u32;
+        self.buffer_views.push(gltf::BufferView {
+            buffer: 0,
+            byte_offset,
+            byte_length: data.len() as u32,
+            target,
+        });
+        index
+    }
+
+    fn push_accessor(
+        &mut self,
+        component_type: u32,
+        count: u32,
+        type_: &str,
+        data: &[u8],
+        target: Option<u32>,
+        bounds: Option<([f32; 3], [f32; 3])>,
+    ) -> u32 {
+        let buffer_view = self.push_view(data, target);
+        let index = self.accessors.len() as u32;
+        self.accessors.push(gltf::Accessor {
+            buffer_view,
+            component_type,
+            count,
+            type_: type_.to_string(),
+            min: bounds.map(|(min, _)| min.to_vec()),
+            max: bounds.map(|(_, max)| max.to_vec()),
+        });
+        index
+    }
+
+    fn write_positions(&mut self, positions: &[[f32; 3]]) -> u32 {
+        let bounds = position_min_max(positions);
+        let data = flatten_le(positions);
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_FLOAT,
+            positions.len() as u32,
+            "VEC3",
+            &data,
+            Some(gltf::TARGET_ARRAY_BUFFER),
+            Some(bounds),
+        )
+    }
+
+    fn write_vec3s_no_bounds(&mut self, data: &[[f32; 3]], target: u32) -> u32 {
+        let bytes = flatten_le(data);
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_FLOAT,
+            data.len() as u32,
+            "VEC3",
+            &bytes,
+            Some(target),
+            None,
+        )
+    }
+
+    fn write_vec2s(&mut self, data: &[[f32; 2]]) -> u32 {
+        let bytes = flatten_le(data);
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_FLOAT,
+            data.len() as u32,
+            "VEC2",
+            &bytes,
+            Some(gltf::TARGET_ARRAY_BUFFER),
+            None,
+        )
+    }
+
+    fn write_indices(&mut self, indices: &[u32]) -> u32 {
+        let bytes: Vec<u8> = indices.iter().flat_map(|i| i.to_le_bytes()).collect();
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_UNSIGNED_INT,
+            indices.len() as u32,
+            "SCALAR",
+            &bytes,
+            Some(gltf::TARGET_ELEMENT_ARRAY_BUFFER),
+            None,
+        )
+    }
+
+    fn write_scalar_times(&mut self, times: &[f64]) -> u32 {
+        let values: Vec<f32> = times.iter().map(|&t| t as f32).collect();
+        let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_FLOAT,
+            values.len() as u32,
+            "SCALAR",
+            &bytes,
+            None,
+            None,
+        )
+    }
+
+    /// Writes an animation sampler output accessor. `N` selects the glTF accessor type (3 =>
+    /// VEC3, 4 => VEC4); no bufferView `target`, since accessors used only by animation samplers
+    /// don't get one.
+    fn write_floatn<const N: usize>(&mut self, data: &[[f32; N]], target: Option<u32>) -> u32 {
+        let type_ = match N {
+            3 => "VEC3",
+            4 => "VEC4",
+            _ => unreachable!("animation channels are only ever VEC3 (translation/scale) or VEC4 (rotation)"),
+        };
+        let bytes = flatten_le(data);
+        self.push_accessor(
+            gltf::COMPONENT_TYPE_FLOAT,
+            data.len() as u32,
+            type_,
+            &bytes,
+            target,
+            None,
+        )
+    }
+}
+
+fn flatten_le<const N: usize>(data: &[[f32; N]]) -> Vec<u8> {
+    data.iter().flatten().flat_map(|c: &f32| c.to_le_bytes()).collect()
+}
+
+fn position_min_max(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
+    let mut min = positions[0];
+    let mut max = positions[0];
+    for p in &positions[1..] {
+        for i in 0..3 {
+            min[i] = min[i].min(p[i]);
+            max[i] = max[i].max(p[i]);
+        }
+    }
+    (min, max)
+}
+
+// --- GLB container framing (12-byte header + JSON chunk + optional BIN chunk) ---
+
+fn write_glb_container(json: &[u8], bin: &[u8]) -> Vec<u8> {
+    let json_padded = pad(json, b' ');
+    let bin_padded = pad(bin, 0);
+    let has_bin = !bin_padded.is_empty();
+
+    let total_len = 12 + 8 + json_padded.len() + if has_bin { 8 + bin_padded.len() } else { 0 };
+
+    let mut out = Vec::with_capacity(total_len);
+    out.extend_from_slice(b"glTF");
+    out.extend_from_slice(&2u32.to_le_bytes());
+    out.extend_from_slice(&(total_len as u32).to_le_bytes());
+
+    out.extend_from_slice(&(json_padded.len() as u32).to_le_bytes());
+    out.extend_from_slice(b"JSON");
+    out.extend_from_slice(&json_padded);
+
+    if has_bin {
+        out.extend_from_slice(&(bin_padded.len() as u32).to_le_bytes());
+        out.extend_from_slice(b"BIN\0");
+        out.extend_from_slice(&bin_padded);
+    }
+
+    out
+}
+
+fn pad(data: &[u8], fill: u8) -> Vec<u8> {
+    let mut padded = data.to_vec();
+    while !padded.len().is_multiple_of(4) {
+        padded.push(fill);
+    }
+    padded
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_frames_json_and_bin_chunks_with_padding() {
+        let json = b"{}"; // 2 bytes -> padded to 4 with spaces
+        let bin = &[1u8, 2, 3][..]; // 3 bytes -> padded to 4 with a zero
+        let out = write_glb_container(json, bin);
+
+        assert_eq!(&out[0..4], b"glTF");
+        assert_eq!(u32::from_le_bytes(out[4..8].try_into().unwrap()), 2);
+        let total_len = u32::from_le_bytes(out[8..12].try_into().unwrap());
+        assert_eq!(total_len as usize, out.len());
+
+        let json_chunk_len = u32::from_le_bytes(out[12..16].try_into().unwrap());
+        assert_eq!(json_chunk_len, 4);
+        assert_eq!(&out[16..20], b"JSON");
+        assert_eq!(&out[20..24], b"{}  ");
+
+        let bin_chunk_len = u32::from_le_bytes(out[24..28].try_into().unwrap());
+        assert_eq!(bin_chunk_len, 4);
+        assert_eq!(&out[28..32], b"BIN\0");
+        assert_eq!(&out[32..36], &[1, 2, 3, 0]);
+    }
+
+    #[test]
+    fn container_omits_bin_chunk_when_empty() {
+        let out = write_glb_container(b"{}", &[]);
+        assert_eq!(out.len(), 12 + 8 + 4);
+        let total_len = u32::from_le_bytes(out[8..12].try_into().unwrap());
+        assert_eq!(total_len as usize, out.len());
+    }
+
+    #[test]
+    fn bin_writer_aligns_views_to_four_bytes() {
+        let mut writer = BinWriter::default();
+        writer.push_view(&[1, 2, 3], None); // 3 bytes, unaligned length
+        let second = writer.push_view(&[4, 5], None);
+        assert_eq!(writer.buffer_views[second as usize].byte_offset, 4);
+    }
+
+    #[test]
+    fn position_min_max_folds_component_wise() {
+        let positions = [[1.0, -2.0, 3.0], [-1.0, 5.0, 0.0]];
+        let (min, max) = position_min_max(&positions);
+        assert_eq!(min, [-1.0, -2.0, 0.0]);
+        assert_eq!(max, [1.0, 5.0, 3.0]);
+    }
+
+    #[test]
+    fn flatten_le_produces_little_endian_bytes() {
+        let data = [[1.0f32, 2.0]];
+        let bytes = flatten_le(&data);
+        assert_eq!(bytes, [1.0f32.to_le_bytes(), 2.0f32.to_le_bytes()].concat());
+    }
 }
