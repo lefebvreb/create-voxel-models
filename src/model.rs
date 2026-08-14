@@ -1,7 +1,11 @@
+use std::path::PathBuf;
+
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
 
 use crate::palette::{Color, Palette};
+use crate::render::{self, CameraAngle, RenderOutput};
+use crate::scene::{Node, Scene};
 use crate::utils::Int3;
 
 #[pyclass]
@@ -57,5 +61,19 @@ impl Model {
         let color = self.check_color_get_id(color)?;
         self.data[index] = color;
         Ok(())
+    }
+
+    #[pyo3(signature = (angles, *, background = None, output_dir = None))]
+    fn render(
+        slf: Bound<Self>,
+        angles: Vec<CameraAngle>,
+        background: Option<(u8, u8, u8)>,
+        output_dir: Option<PathBuf>,
+    ) -> PyResult<RenderOutput> {
+        let py = slf.py();
+        let scene = Py::new(py, Scene::default())?.into_bound(py);
+        let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
+        Node::add_model(node.bind(py).clone(), "model".to_string(), slf.unbind(), None)?;
+        render::render(scene, angles, vec![], None, None, None, background, output_dir)
     }
 }

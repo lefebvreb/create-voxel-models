@@ -8,6 +8,7 @@ use crate::anim::Anim;
 use crate::glb::export_glb;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
+use crate::render::{self, CameraAngle, RenderOutput};
 use crate::utils::Dict;
 
 #[pyclass]
@@ -35,7 +36,7 @@ impl Scene {
     }
 
     #[pyo3(signature = (name, *, extras = None))]
-    fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
+    pub(crate) fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
         Self::add_node(
             &slf,
             Node {
@@ -69,6 +70,21 @@ impl Scene {
         let blob = export_glb(slf)?;
         write(path, blob)?;
         Ok(())
+    }
+
+    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None, background = None, output_dir = None))]
+    #[allow(clippy::too_many_arguments)]
+    fn render(
+        slf: Bound<Self>,
+        angles: Vec<CameraAngle>,
+        times: Vec<f64>,
+        animation: Option<String>,
+        include: Option<Vec<String>>,
+        exclude: Option<Vec<String>>,
+        background: Option<(u8, u8, u8)>,
+        output_dir: Option<PathBuf>,
+    ) -> PyResult<RenderOutput> {
+        render::render(slf, angles, times, animation, include, exclude, background, output_dir)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
@@ -126,7 +142,12 @@ impl Node {
     }
 
     #[pyo3(signature = (name, model, *, extras = None))]
-    fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
+    pub(crate) fn add_model(
+        slf: Bound<Self>,
+        name: String,
+        model: Py<Model>,
+        extras: Option<Dict>,
+    ) -> PyResult<Py<Mesh>> {
         let mesh = Py::new(
             slf.py(),
             Mesh {

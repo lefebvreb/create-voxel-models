@@ -11,7 +11,7 @@ use crate::meshing::{self, MaterialData, PaletteData};
 use crate::model::Model;
 use crate::palette::Palette;
 use crate::scene::{Mesh, Node, Scene};
-use crate::utils::HashPy;
+use crate::utils::{HashPy, encode_gray_png, encode_rgb_png};
 
 pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     let py = scene.py();
@@ -297,29 +297,6 @@ fn push_texture(root: &mut gltf::Root, writer: &mut BinWriter, png_bytes: Vec<u8
         source: image_index,
     });
     texture_index
-}
-
-fn encode_rgb_png(width: u32, height: u32, pixels: &[u8]) -> PyResult<Vec<u8>> {
-    encode_png(width, height, pixels, png::ColorType::Rgb)
-}
-
-fn encode_gray_png(width: u32, height: u32, pixels: &[u8]) -> PyResult<Vec<u8>> {
-    encode_png(width, height, pixels, png::ColorType::Grayscale)
-}
-
-fn encode_png(width: u32, height: u32, pixels: &[u8], color: png::ColorType) -> PyResult<Vec<u8>> {
-    let mut bytes = Vec::new();
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(color);
-    encoder.set_depth(png::BitDepth::Eight);
-    let mut writer = encoder
-        .write_header()
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    writer
-        .write_image_data(pixels)
-        .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    writer.finish().map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(bytes)
 }
 
 // --- Animations ---

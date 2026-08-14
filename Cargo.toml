@@ -9,6 +9,7 @@ name = "voxels"
 crate-type = ["cdylib"]
 
 [dependencies]
+bevy = { version = "0.19.1", default-features = false, features = ["async_executor", "reflect_auto_register", "bevy_pbr", "bevy_gltf", "gltf_animation", "png", "pbr_transmission_textures"] }
 either = { version = "1.17.0", default-features = false }
 glam = { version = "0.33.3", default-features = false, features = ["f64", "std"] }
 png = { version = "0.18.1", default-features = false }
