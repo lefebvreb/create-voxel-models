@@ -1,12 +1,15 @@
-use std::path::{Path, PathBuf};
+//! FULLY VIBE-CODED
+
+use std::cell::RefCell;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bevy::asset::io::memory::{Dir, MemoryAssetReader};
 use bevy::asset::io::{AssetSourceBuilder, AssetSourceId};
 use bevy::asset::{LoadState, RenderAssetUsages};
-use bevy::camera::RenderTarget;
 use bevy::camera::primitives::Aabb;
+use bevy::camera::{Hdr, RenderTarget};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::gltf::Gltf;
 use bevy::image::Image;
@@ -77,147 +80,210 @@ pub fn render(
     let exclude = exclude.unwrap_or_default();
     let glb_bytes = export_glb(scene)?;
 
-    let mut app = build_headless_app(glb_bytes)?;
+    with_render_app(|ra| {
+        let (scene_handle, animation_clip) = ra.load_gltf(glb_bytes, animation.as_deref())?;
 
-    let (scene_handle, animation_clip) = load_gltf(&mut app, animation.as_deref())?;
+        let world_root = ra.app.world_mut().spawn(WorldAssetRoot(scene_handle)).id();
+        poll_until(&mut ra.app, |app| {
+            let world = app.world();
+            Ok(world
+                .get::<WorldInstance>(world_root)
+                .is_some_and(|instance| world.resource::<WorldInstanceSpawner>().instance_is_ready(**instance)))
+        })?;
 
-    let world_root = app.world_mut().spawn(WorldAssetRoot(scene_handle)).id();
-    poll_until(&mut app, |app| {
-        let world = app.world();
-        Ok(world
-            .get::<WorldInstance>(world_root)
-            .is_some_and(|instance| world.resource::<WorldInstanceSpawner>().instance_is_ready(**instance)))
-    })?;
+        fix_transmission_texture_format(ra.app.world_mut());
+        apply_visibility(ra.app.world_mut(), world_root, &include, &exclude);
+        let animation_setup = animation_clip.map(|clip| setup_animation(ra.app.world_mut(), clip));
 
-    fix_transmission_texture_format(app.world_mut());
-    apply_visibility(app.world_mut(), world_root, &include, &exclude);
-
-    let animation_setup = animation_clip.map(|clip| setup_animation(app.world_mut(), clip));
-
-    let bg_color = background_color(background);
-    setup_lighting(app.world_mut());
-
-    let target_handle = app
-        .world_mut()
-        .resource_mut::<Assets<Image>>()
-        .add(new_render_target_image());
-    let camera = app
-        .world_mut()
-        .spawn((
-            Camera3d::default(),
-            Camera {
-                clear_color: ClearColorConfig::Custom(bg_color),
-                ..default()
-            },
-            RenderTarget::from(target_handle.clone()),
-            Projection::Perspective(PerspectiveProjection::default()),
-            // Bypass filmic tonemapping: an agent inspecting colors for correctness needs the
-            // material colors it authored, not a hue-shifting display curve. `TonyMcMapface`
-            // (Bevy's default) would also silently render everything wrong without the
-            // `tonemapping_luts` feature, which we deliberately don't enable.
-            Tonemapping::None,
-            Transform::IDENTITY,
-        ))
-        .id();
-
-    // Settle transform/visibility propagation before measuring bounds.
-    app.update();
-    let (min, max) = compute_bounds(app.world_mut());
-    let (center, radius) = bounds_center_radius(min, max);
-    let fov_y = PerspectiveProjection::default().fov as f64;
-    let base_distance = fit_distance(radius, fov_y, FIT_PADDING);
-
-    let output_dir = output_dir.unwrap_or_else(default_output_dir);
-    std::fs::create_dir_all(&output_dir)?;
-
-    let time_values: Vec<f64> = match &animation_setup {
-        Some(_) if !times.is_empty() => times,
-        Some(_) => vec![0.0],
-        None => vec![0.0],
-    };
-
-    let mut files = Vec::with_capacity(time_values.len() * angles.len());
-    for (time_idx, &time) in time_values.iter().enumerate() {
-        if let Some((entities, node_index)) = &animation_setup {
-            seek_animation(app.world_mut(), entities, *node_index, time);
+        if let Some(mut camera) = ra.app.world_mut().get_mut::<Camera>(ra.camera) {
+            camera.clear_color = ClearColorConfig::Custom(background_color(background));
         }
-        for (angle_idx, angle) in angles.iter().enumerate() {
-            position_camera(app.world_mut(), camera, center, base_distance, angle);
-            let (width, height, pixels) = capture_screenshot(&mut app, &target_handle)?;
-            let filename = output_filename(time_idx, angle_idx);
-            std::fs::write(output_dir.join(&filename), encode_rgb_png(width, height, &pixels)?)?;
-            files.push(filename);
+
+        // Settle transform/visibility propagation before measuring bounds.
+        ra.app.update();
+        let (min, max) = compute_bounds(ra.app.world_mut());
+        let (center, radius) = bounds_center_radius(min, max);
+        let fov_y = PerspectiveProjection::default().fov as f64;
+        let base_distance = fit_distance(radius, fov_y, FIT_PADDING);
+
+        let output_dir = output_dir.unwrap_or_else(default_output_dir);
+        std::fs::create_dir_all(&output_dir)?;
+
+        let time_values: Vec<f64> = match &animation_setup {
+            Some(_) if !times.is_empty() => times,
+            Some(_) => vec![0.0],
+            None => vec![0.0],
+        };
+
+        let mut files = Vec::with_capacity(time_values.len() * angles.len());
+        for (time_idx, &time) in time_values.iter().enumerate() {
+            if let Some((entities, node_index)) = &animation_setup {
+                seek_animation(ra.app.world_mut(), entities, *node_index, time);
+            }
+            for (angle_idx, angle) in angles.iter().enumerate() {
+                position_camera(ra.app.world_mut(), ra.camera, center, base_distance, angle);
+                let (width, height, pixels) = capture_screenshot(&mut ra.app, &ra.target)?;
+                let filename = output_filename(time_idx, angle_idx);
+                std::fs::write(output_dir.join(&filename), encode_rgb_png(width, height, &pixels)?)?;
+                files.push(filename);
+            }
         }
+
+        // The spawned scene (and everything under it) is specific to this call; despawning it
+        // (recursive by default) drops the last strong handles to its meshes/materials/images too,
+        // so Bevy's asset GC reclaims them before the next call builds a fresh scene. The camera,
+        // lights, and render target are shared app-wide state and stay alive across calls.
+        ra.app.world_mut().entity_mut(world_root).despawn();
+
+        Ok(RenderOutput { dir: output_dir, files })
+    })
+}
+
+// --- Persistent headless app, reused across render() calls ---
+//
+// Building a headless Bevy `App` (GPU adapter/device setup, synchronous shader compilation) is
+// the dominant cost of a single render, not the actual draw calls - so a fresh `App` per call
+// would pay that cost every time. Keeping one alive per thread (an agent script is normally
+// single-threaded, and there is no cross-call state to keep it correct even if not) amortizes it
+// across a whole session's worth of `Scene.render`/`Model.render` calls.
+
+struct RenderApp {
+    app: App,
+    dir: Dir,
+    camera: Entity,
+    target: Handle<Image>,
+    next_id: u64,
+}
+
+thread_local! {
+    // `&'static mut`, not `RenderApp`: Bevy's `App` isn't safe to drop during Rust's own
+    // thread-local teardown at interpreter shutdown (destructor order across independent
+    // thread-locals - some of which Bevy's task pools/diagnostics register internally - is
+    // unspecified, and unwinding into an already-torn-down one panics). `Box::leak` means this
+    // thread-local's own destructor only drops a plain reference, never touching `RenderApp`
+    // itself, so it's simply never torn down - harmless, since the OS reclaims everything at
+    // process exit anyway.
+    static RENDER_APP: RefCell<Option<&'static mut RenderApp>> = const { RefCell::new(None) };
+}
+
+fn with_render_app<T>(f: impl FnOnce(&mut RenderApp) -> PyResult<T>) -> PyResult<T> {
+    RENDER_APP.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(Box::leak(Box::new(RenderApp::new()?)));
+        }
+        f(slot.as_mut().expect("just initialized above if empty"))
+    })
+}
+
+impl RenderApp {
+    fn new() -> PyResult<Self> {
+        let dir = Dir::default();
+        let mut app = App::new();
+        app.register_asset_source(
+            AssetSourceId::Default,
+            AssetSourceBuilder::new({
+                let dir = dir.clone();
+                move || Box::new(MemoryAssetReader { root: dir.clone() }) as _
+            }),
+        );
+        app.add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: None,
+                    exit_condition: ExitCondition::DontExit,
+                    ..default()
+                })
+                .set(RenderPlugin {
+                    synchronous_pipeline_compilation: true,
+                    ..default()
+                }),
+        );
+        app.finish();
+        app.cleanup();
+
+        setup_lighting(app.world_mut());
+
+        let target = app
+            .world_mut()
+            .resource_mut::<Assets<Image>>()
+            .add(new_render_target_image());
+        let camera = app
+            .world_mut()
+            .spawn((
+                Camera3d::default(),
+                Camera::default(),
+                Hdr,
+                RenderTarget::from(target.clone()),
+                Projection::Perspective(PerspectiveProjection::default()),
+                // Bypass filmic tonemapping: an agent inspecting colors for correctness needs
+                // the material colors it authored, not a hue-shifting display curve.
+                // `TonyMcMapface` (Bevy's default) would also silently render everything wrong
+                // without the `tonemapping_luts` feature, which we deliberately don't enable.
+                Tonemapping::None,
+                Transform::IDENTITY,
+            ))
+            .id();
+
+        Ok(Self {
+            app,
+            dir,
+            camera,
+            target,
+            next_id: 0,
+        })
     }
 
-    Ok(RenderOutput { dir: output_dir, files })
-}
+    fn load_gltf(
+        &mut self,
+        glb_bytes: Vec<u8>,
+        animation: Option<&str>,
+    ) -> PyResult<(
+        Handle<bevy::world_serialization::WorldAsset>,
+        Option<Handle<AnimationClip>>,
+    )> {
+        self.next_id += 1;
+        let path = PathBuf::from(format!("scene-{}.glb", self.next_id));
+        self.dir.insert_asset(&path, glb_bytes);
 
-// --- Headless app setup ---
+        let handle: Handle<Gltf> = self
+            .app
+            .world()
+            .resource::<AssetServer>()
+            .load(path.to_string_lossy().into_owned());
+        poll_until(&mut self.app, |app| {
+            let server = app.world().resource::<AssetServer>();
+            match server.load_state(handle.id()) {
+                LoadState::Failed(err) => Err(PyValueError::new_err(format!(
+                    "failed to load exported scene into the renderer: {err}"
+                ))),
+                _ => Ok(server.is_loaded_with_dependencies(handle.id())),
+            }
+        })?;
+        // The in-memory source is only read while loading; the bytes aren't needed once the
+        // GLTF/mesh/material/image sub-assets have been parsed out of them.
+        self.dir.remove_asset(&path);
 
-fn build_headless_app(glb_bytes: Vec<u8>) -> PyResult<App> {
-    let dir = Dir::default();
-    dir.insert_asset(Path::new("scene.glb"), glb_bytes);
-
-    let mut app = App::new();
-    app.register_asset_source(
-        AssetSourceId::Default,
-        AssetSourceBuilder::new(move || Box::new(MemoryAssetReader { root: dir.clone() }) as _),
-    );
-    app.add_plugins(
-        DefaultPlugins
-            .set(WindowPlugin {
-                primary_window: None,
-                exit_condition: ExitCondition::DontExit,
-                ..default()
-            })
-            .set(RenderPlugin {
-                synchronous_pipeline_compilation: true,
-                ..default()
-            }),
-    );
-    app.finish();
-    app.cleanup();
-    Ok(app)
-}
-
-fn load_gltf(
-    app: &mut App,
-    animation: Option<&str>,
-) -> PyResult<(
-    Handle<bevy::world_serialization::WorldAsset>,
-    Option<Handle<AnimationClip>>,
-)> {
-    let handle: Handle<Gltf> = app.world().resource::<AssetServer>().load("scene.glb");
-    poll_until(app, |app| {
-        let server = app.world().resource::<AssetServer>();
-        match server.load_state(handle.id()) {
-            LoadState::Failed(err) => Err(PyValueError::new_err(format!(
-                "failed to load exported scene into the renderer: {err}"
-            ))),
-            _ => Ok(server.is_loaded_with_dependencies(handle.id())),
-        }
-    })?;
-
-    let gltf_assets = app.world().resource::<Assets<Gltf>>();
-    let gltf = gltf_assets
-        .get(&handle)
-        .expect("gltf finished loading, so its asset must be present");
-    let scene_handle = gltf
-        .default_scene
-        .clone()
-        .or_else(|| gltf.scenes.first().cloned())
-        .ok_or_else(|| PyValueError::new_err("exported scene contains no glTF scene"))?;
-    let clip = match animation {
-        Some(name) => Some(
-            gltf.named_animations
-                .get(name)
-                .cloned()
-                .ok_or_else(|| PyValueError::new_err(format!("no animation named {name:?} on this scene")))?,
-        ),
-        None => None,
-    };
-    Ok((scene_handle, clip))
+        let gltf_assets = self.app.world().resource::<Assets<Gltf>>();
+        let gltf = gltf_assets
+            .get(&handle)
+            .expect("gltf finished loading, so its asset must be present");
+        let scene_handle = gltf
+            .default_scene
+            .clone()
+            .or_else(|| gltf.scenes.first().cloned())
+            .ok_or_else(|| PyValueError::new_err("exported scene contains no glTF scene"))?;
+        let clip = match animation {
+            Some(name) => Some(
+                gltf.named_animations
+                    .get(name)
+                    .cloned()
+                    .ok_or_else(|| PyValueError::new_err(format!("no animation named {name:?} on this scene")))?,
+            ),
+            None => None,
+        };
+        Ok((scene_handle, clip))
+    }
 }
 
 fn tick(app: &mut App) {
