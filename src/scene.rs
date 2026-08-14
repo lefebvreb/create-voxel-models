@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fs::write;
 use std::path::PathBuf;
 
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
@@ -65,7 +66,9 @@ impl Scene {
     }
 
     fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
-        export_glb(slf, path)
+        let blob = export_glb(slf)?;
+        write(path, blob)?;
+        Ok(())
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
