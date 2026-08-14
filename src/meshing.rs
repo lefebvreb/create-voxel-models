@@ -1,3 +1,5 @@
+//! FULLY VIBE-CODED
+
 use std::collections::HashMap;
 
 use pyo3::{Bound, PyResult};

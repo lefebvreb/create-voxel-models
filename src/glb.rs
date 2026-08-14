@@ -1,3 +1,5 @@
+//! FULLY VIBE-CODED
+
 use std::collections::{BTreeSet, HashMap};
 
 use pyo3::exceptions::PyValueError;
