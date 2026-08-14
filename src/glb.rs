@@ -16,13 +16,6 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     let scene_ref = scene.borrow();
 
     let mut root = gltf::Root::default();
-    root.samplers.push(gltf::Sampler {
-        mag_filter: gltf::FILTER_NEAREST,
-        min_filter: gltf::FILTER_NEAREST,
-        wrap_s: gltf::WRAP_CLAMP_TO_EDGE,
-        wrap_t: gltf::WRAP_CLAMP_TO_EDGE,
-    });
-
     let mut writer = BinWriter::default();
     let mut extensions_used = BTreeSet::new();
     let mut palette_cache: HashMap<HashPy<Palette>, Vec<u32>> = HashMap::new();
@@ -175,9 +168,15 @@ fn get_or_build_model_primitives(
     if let Some(primitives) = model_cache.get(&key) {
         return Ok(primitives.clone());
     }
+    let mesh_data = meshing::export_model(model.bind(py).clone())?;
+    // A hollow model (no voxels set) produces no primitives; resolving its palette into materials
+    // anyway would leave genuinely unreferenced materials/textures in the output, so skip it.
+    if mesh_data.primitives.is_empty() {
+        model_cache.insert(key, Vec::new());
+        return Ok(Vec::new());
+    }
     let palette = model.borrow(py).palette.clone_ref(py);
     let material_indices = get_or_build_palette_materials(py, &palette, palette_cache, root, writer, extensions_used)?;
-    let mesh_data = meshing::export_model(model.bind(py).clone())?;
 
     let mut primitives = Vec::with_capacity(mesh_data.primitives.len());
     for primitive in &mesh_data.primitives {
@@ -273,7 +272,17 @@ fn build_material(
     Ok(index)
 }
 
+/// Pushes the atlas sampler lazily, on first use: a texture-less scene should not end up with an
+/// unreferenced sampler in the output (the validator flags unused objects).
 fn push_texture(root: &mut gltf::Root, writer: &mut BinWriter, png_bytes: Vec<u8>) -> u32 {
+    if root.samplers.is_empty() {
+        root.samplers.push(gltf::Sampler {
+            mag_filter: gltf::FILTER_NEAREST,
+            min_filter: gltf::FILTER_NEAREST,
+            wrap_s: gltf::WRAP_CLAMP_TO_EDGE,
+            wrap_t: gltf::WRAP_CLAMP_TO_EDGE,
+        });
+    }
     let buffer_view = writer.push_view(&png_bytes, None);
     let image_index = root.images.len() as u32;
     root.images.push(gltf::Image {
@@ -374,6 +383,12 @@ fn push_channel<T, const N: usize>(
     channel: &crate::anim::Channel<T>,
     to_array: impl Fn(&T) -> [f32; N],
 ) {
+    // A channel with no keyframes would produce a zero-count accessor, which the spec forbids
+    // (accessor.count has a minimum of 1) — skip it, mirroring how a mesh with zero primitives
+    // is skipped entirely rather than emitted empty.
+    if channel.input.is_empty() {
+        return;
+    }
     let input = writer.write_scalar_times(&channel.input);
     let values: Vec<[f32; N]> = channel.output.iter().map(to_array).collect();
     let output = writer.write_floatn(&values, None);
@@ -432,7 +447,7 @@ impl BinWriter {
         type_: &str,
         data: &[u8],
         target: Option<u32>,
-        bounds: Option<([f32; 3], [f32; 3])>,
+        bounds: Option<(Vec<f32>, Vec<f32>)>,
     ) -> u32 {
         let buffer_view = self.push_view(data, target);
         let index = self.accessors.len() as u32;
@@ -441,14 +456,14 @@ impl BinWriter {
             component_type,
             count,
             type_: type_.to_string(),
-            min: bounds.map(|(min, _)| min.to_vec()),
-            max: bounds.map(|(_, max)| max.to_vec()),
+            min: bounds.as_ref().map(|(min, _)| min.clone()),
+            max: bounds.map(|(_, max)| max),
         });
         index
     }
 
     fn write_positions(&mut self, positions: &[[f32; 3]]) -> u32 {
-        let bounds = position_min_max(positions);
+        let (min, max) = position_min_max(positions);
         let data = flatten_le(positions);
         self.push_accessor(
             gltf::COMPONENT_TYPE_FLOAT,
@@ -456,7 +471,7 @@ impl BinWriter {
             "VEC3",
             &data,
             Some(gltf::TARGET_ARRAY_BUFFER),
-            Some(bounds),
+            Some((min.to_vec(), max.to_vec())),
         )
     }
 
@@ -496,16 +511,19 @@ impl BinWriter {
         )
     }
 
+    /// The spec requires `min`/`max` on the accessor referenced by `animation.sampler.input`
+    /// (unlike other non-POSITION accessors), so those are always computed here.
     fn write_scalar_times(&mut self, times: &[f64]) -> u32 {
         let values: Vec<f32> = times.iter().map(|&t| t as f32).collect();
         let bytes: Vec<u8> = values.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let (min, max) = scalar_min_max(&values);
         self.push_accessor(
             gltf::COMPONENT_TYPE_FLOAT,
             values.len() as u32,
             "SCALAR",
             &bytes,
             None,
-            None,
+            Some((vec![min], vec![max])),
         )
     }
 
@@ -542,6 +560,18 @@ fn position_min_max(positions: &[[f32; 3]]) -> ([f32; 3], [f32; 3]) {
             min[i] = min[i].min(p[i]);
             max[i] = max[i].max(p[i]);
         }
+    }
+    (min, max)
+}
+
+/// Assumes `values` is non-empty: callers only reach this once `Channel::input` has already been
+/// checked non-empty (see `push_channel`).
+fn scalar_min_max(values: &[f32]) -> (f32, f32) {
+    let mut min = values[0];
+    let mut max = values[0];
+    for &v in &values[1..] {
+        min = min.min(v);
+        max = max.max(v);
     }
     (min, max)
 }

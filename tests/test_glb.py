@@ -3,23 +3,26 @@ import struct
 import tempfile
 from pathlib import Path
 
-from voxels import Interpolation, Model, Palette, Scene, Vec3
+from voxels import Interpolation, Model, Palette, Quat, Scene, Vec3
 
 palette = Palette()
 red = palette.add_color((255, 0, 0), emissive=2.0)
 glass = palette.add_color((0, 128, 255), ior=1.33, transmission=0.8)
+gold = palette.add_color((239, 191, 4), roughness=0, metallic=1.0)
 
-model = Model((2, 2, 2), palette)
+model = Model((3, 1, 1), palette)
 model.put((0, 0, 0), red)
 model.put((1, 0, 0), glass)
+model.put((2, 0, 0), gold)
 
 scene = Scene()
 root = scene.create_root_node("root")
-child = root.create_child_node("child", translation=Vec3(1, 2, 3))
-child.add_model("cube", model)
+child = root.create_child_node("child")
+grandchild = child.create_child_node("grandchild", translation=Vec3(-1.5, -0.5, -0.5))
+grandchild.add_model("cube", model)
 
 anim = scene.create_anim("wiggle")
-anim.add_translation(child, [0.0, 1.0], [Vec3.ZERO, Vec3(0, 1, 0)], interpolation=Interpolation.Step)
+anim.add_rotation(child, [0.0, 1.0, 2.0], [Quat.IDENTITY, Quat.from_rotation_y(180), Quat.IDENTITY], interpolation=Interpolation.Linear)
 
 with tempfile.TemporaryDirectory() as tmp:
     path = Path(tmp) / "scene.glb"
@@ -40,7 +43,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert key in root_json, f"missing top-level key: {key}"
 
     assert root_json["asset"]["version"] == "2.0"
-    assert len(root_json["nodes"]) == 2
+    assert len(root_json["nodes"]) == 3
     assert len(root_json["meshes"]) == 1
     assert len(root_json["animations"]) == 1
     assert "KHR_materials_transmission" in root_json["extensionsUsed"]
