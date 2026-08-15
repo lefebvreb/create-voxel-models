@@ -6,13 +6,14 @@ use png::ColorType;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult};
 
+use super::gltf;
+use super::meshing::{self, MaterialData, PaletteData};
+use super::utils::encode_png;
 use crate::anim::{Anim, Interpolation, Trs};
-use crate::gltf;
-use crate::meshing::{self, MaterialData, PaletteData};
 use crate::model::Model;
 use crate::palette::Palette;
 use crate::scene::{Mesh, Node, Scene};
-use crate::utils::{HashPy, encode_png};
+use crate::utils::HashPy;
 
 pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     let py = scene.py();

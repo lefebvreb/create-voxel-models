@@ -5,11 +5,10 @@ use std::path::PathBuf;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::anim::Anim;
-use crate::glb::export_glb;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
 use crate::render::{CameraAngle, RenderOutput};
-use crate::renderer::render;
+use crate::tools::{export_glb, render};
 use crate::utils::Dict;
 
 #[pyclass]

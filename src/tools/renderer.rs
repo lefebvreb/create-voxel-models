@@ -27,10 +27,10 @@ use png::ColorType;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, PyResult};
 
-use crate::glb::export_glb;
+use super::glb::export_glb;
+use super::utils::encode_png;
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::Scene;
-use crate::utils::encode_png;
 
 const RESOLUTION: u32 = 512;
 const MAX_POLL_TICKS: u32 = 300;

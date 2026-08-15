@@ -5,8 +5,8 @@ use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
 
 use crate::palette::{Color, Palette};
 use crate::render::{CameraAngle, RenderOutput};
-use crate::renderer::render;
 use crate::scene::{Node, Scene};
+use crate::tools::render;
 use crate::utils::Int3;
 
 #[pyclass]

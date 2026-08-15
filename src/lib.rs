@@ -1,15 +1,12 @@
 use pyo3::pymodule;
 
 mod anim;
-mod glb;
-mod gltf;
 mod math;
-mod meshing;
 mod model;
 mod palette;
 mod render;
-mod renderer;
 mod scene;
+mod tools;
 mod utils;
 
 #[pymodule]
