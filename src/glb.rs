@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use png::ColorType;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult};
 
@@ -11,7 +12,7 @@ use crate::meshing::{self, MaterialData, PaletteData};
 use crate::model::Model;
 use crate::palette::Palette;
 use crate::scene::{Mesh, Node, Scene};
-use crate::utils::{HashPy, encode_gray_png, encode_rgb_png};
+use crate::utils::{HashPy, encode_png};
 
 pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     let py = scene.py();
@@ -213,15 +214,22 @@ fn build_material(
     let height = material.atlas_height;
 
     let base_color_bytes: Vec<u8> = material.base_color.iter().flatten().copied().collect();
-    let base_color_texture = push_texture(root, writer, encode_rgb_png(width, height, &base_color_bytes)?);
+    let base_color_texture = push_texture(
+        root,
+        writer,
+        encode_png(width, height, &base_color_bytes, ColorType::Rgb)?,
+    );
 
     let metallic_roughness_bytes: Vec<u8> = material
         .metallic_roughness
         .iter()
         .flat_map(|&[roughness, metallic]| [0, roughness, metallic])
         .collect();
-    let metallic_roughness_texture =
-        push_texture(root, writer, encode_rgb_png(width, height, &metallic_roughness_bytes)?);
+    let metallic_roughness_texture = push_texture(
+        root,
+        writer,
+        encode_png(width, height, &metallic_roughness_bytes, ColorType::Rgb)?,
+    );
 
     let mut extensions = gltf::MaterialExtensions::default();
 
@@ -231,7 +239,11 @@ fn build_material(
     }
 
     if material.transmission.iter().any(|&t| t != 0) {
-        let transmission_texture = push_texture(root, writer, encode_gray_png(width, height, &material.transmission)?);
+        let transmission_texture = push_texture(
+            root,
+            writer,
+            encode_png(width, height, &material.transmission, ColorType::Grayscale)?,
+        );
         extensions.transmission = Some(gltf::KhrMaterialsTransmission {
             transmission_factor: 1.0,
             transmission_texture: gltf::TextureInfo {

@@ -23,12 +23,13 @@ use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::{ExitCondition, WindowPlugin};
 use bevy::world_serialization::{WorldAssetRoot, WorldInstance, WorldInstanceSpawner};
 use glam::DVec3;
+use png::ColorType;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, PyResult, pyclass, pymethods};
 
 use crate::glb::export_glb;
 use crate::scene::Scene;
-use crate::utils::encode_rgb_png;
+use crate::utils::encode_png;
 
 const RESOLUTION: u32 = 512;
 const MAX_POLL_TICKS: u32 = 300;
@@ -124,7 +125,10 @@ pub fn render(
                 position_camera(ra.app.world_mut(), ra.camera, center, base_distance, angle);
                 let (width, height, pixels) = capture_screenshot(&mut ra.app, &ra.target)?;
                 let filename = output_filename(time_idx, angle_idx);
-                std::fs::write(output_dir.join(&filename), encode_rgb_png(width, height, &pixels)?)?;
+                std::fs::write(
+                    output_dir.join(&filename),
+                    encode_png(width, height, &pixels, ColorType::Rgb)?,
+                )?;
                 files.push(filename);
             }
         }
