@@ -43,6 +43,7 @@ pub struct Volume {
 #[pymethods]
 impl Volume {
     #[new]
+    #[pyo3(signature = (color, distance, *, thickness = 1.0))]
     pub fn __new__(color: (u8, u8, u8), distance: f64, thickness: f64) -> PyResult<Self> {
         if distance <= 0.0 {
             return Err(PyValueError::new_err("distance must be greater than 0.0"));
@@ -71,8 +72,8 @@ impl Palette {
         Self::default()
     }
 
-    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
     pub fn add_color(
         slf: Bound<Self>,
         rgb: (u8, u8, u8),

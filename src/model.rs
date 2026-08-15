@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
@@ -94,16 +92,15 @@ impl Model {
         Ok(())
     }
 
-    #[pyo3(signature = (angles, *, background = None, output_dir = None))]
+    #[pyo3(signature = (angles, *, background = None))]
     pub fn render(
         slf: Bound<Self>,
         angles: Vec<CameraAngle>,
         background: Option<(u8, u8, u8)>,
-        output_dir: Option<PathBuf>,
     ) -> PyResult<RenderOutput> {
         let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
         Node::add_model(node.bind(slf.py()).clone(), "model".to_string(), slf.unbind(), None)?;
-        render(scene, angles, vec![], None, None, None, background, output_dir)
+        render(scene, angles, vec![], None, None, None, background)
     }
 }

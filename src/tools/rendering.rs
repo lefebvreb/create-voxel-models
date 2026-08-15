@@ -46,7 +46,6 @@ pub fn render(
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
     background: Option<(u8, u8, u8)>,
-    output_dir: Option<PathBuf>,
 ) -> PyResult<RenderOutput> {
     if angles.is_empty() {
         return Err(PyValueError::new_err("angles must not be empty"));
@@ -81,7 +80,7 @@ pub fn render(
         let fov_y = PerspectiveProjection::default().fov as f64;
         let base_distance = fit_distance(radius, fov_y, FIT_PADDING);
 
-        let output_dir = output_dir.unwrap_or_else(default_output_dir);
+        let output_dir = output_dir();
         std::fs::create_dir_all(&output_dir)?;
 
         let time_values: Vec<f64> = match &animation_setup {
@@ -502,7 +501,7 @@ fn capture_screenshot(app: &mut App, target: &Handle<Image>) -> PyResult<(u32, u
 
 // --- Output paths ---
 
-fn default_output_dir() -> PathBuf {
+fn output_dir() -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
