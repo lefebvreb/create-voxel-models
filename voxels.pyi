@@ -188,11 +188,6 @@ class Vec3:
 
 @final
 class Volume:
-    """
-    How a transmissive `Color` attenuates (tints/absorbs) light travelling through its volume,
-    via `KHR_materials_volume`'s `attenuationColor`/`attenuationDistance`. Only meaningful
-    alongside a non-zero `transmission`.
-    """
     def __new__(cls, /, color: tuple[int, int, int], distance: float) -> Volume: ...
     @property
     def color(self, /) -> tuple[int, int, int]: ...
