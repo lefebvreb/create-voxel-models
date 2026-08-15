@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
+use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
 use crate::palette::{Color, Palette};
 use crate::render::{CameraAngle, RenderOutput};
@@ -19,23 +19,29 @@ pub struct Model {
 }
 
 impl Model {
-    fn pos_to_index(&self, pos: Int3) -> PyResult<usize> {
-        let (x, y, z) = pos;
-        let (dx, dy, dz) = self.dimensions;
-        if x >= dx || y >= dy || z >= dz {
-            return Err(PyValueError::new_err("coordinates are out of bounds of this model"));
+    fn check_contains(&self, a: Int3) -> PyResult<()> {
+        let ((ax, ay, az), (dx, dy, dz)) = (a, self.dimensions);
+        if ax >= dx || ay >= dy || az >= dz {
+            return Err(PyValueError::new_err(format!(
+                "coordinates ({ax}, {ay}, {az}) are out of bounds of this model"
+            )));
         }
-        Ok(x + y * dx + z * dx * dy)
+        Ok(())
     }
 
-    fn check_color_get_id(&self, color: Option<Bound<Color>>) -> PyResult<u8> {
+    fn index(&self, pos: Int3) -> usize {
+        let ((x, y, z), (dx, dy, _)) = (pos, self.dimensions);
+        x + y * dx + z * dx * dy
+    }
+
+    fn check_color_get_id(&self, color: Option<&Color>) -> PyResult<u8> {
         let Some(color) = color else {
             return Ok(0);
         };
-        if !color.get().palette.is(&self.palette) {
+        if !color.palette.is(&self.palette) {
             return Err(PyValueError::new_err("color does not belong to this model's palette"));
         }
-        Ok(color.get().index + 1)
+        Ok(color.index + 1)
     }
 }
 
@@ -56,11 +62,35 @@ impl Model {
         })
     }
 
-    #[pyo3(signature = (position, color = None))]
-    pub fn put(&mut self, position: Int3, color: Option<Bound<Color>>) -> PyResult<()> {
-        let index = self.pos_to_index(position)?;
+    pub fn copy(&self, py: Python) -> Self {
+        Self {
+            dimensions: self.dimensions,
+            data: self.data.clone(),
+            palette: self.palette.clone_ref(py),
+        }
+    }
+
+    #[pyo3(signature = (color, a))]
+    pub fn put(&mut self, color: Option<&Color>, a: Int3) -> PyResult<()> {
+        self.check_contains(a)?;
         let color = self.check_color_get_id(color)?;
-        self.data[index] = color;
+        self.data[self.index(a)] = color;
+        Ok(())
+    }
+
+    #[pyo3(signature = (color, a, b))]
+    pub fn aabb(&mut self, color: Option<&Color>, a: Int3, b: Int3) -> PyResult<()> {
+        self.check_contains(a)?;
+        self.check_contains(b)?;
+        let color = self.check_color_get_id(color)?;
+        let ((ax, ay, az), (bx, by, bz)) = (a, b);
+        for z in az.min(bz)..az.max(bz) {
+            for y in ay.min(by)..ay.max(by) {
+                for x in ax.min(bx)..ax.max(bx) {
+                    self.data[self.index((x, y, z))] = color;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -71,10 +101,9 @@ impl Model {
         background: Option<(u8, u8, u8)>,
         output_dir: Option<PathBuf>,
     ) -> PyResult<RenderOutput> {
-        let py = slf.py();
-        let scene = Py::new(py, Scene::default())?.into_bound(py);
+        let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
-        Node::add_model(node.bind(py).clone(), "model".to_string(), slf.unbind(), None)?;
+        Node::add_model(node.bind(slf.py()).clone(), "model".to_string(), slf.unbind(), None)?;
         render(scene, angles, vec![], None, None, None, background, output_dir)
     }
 }

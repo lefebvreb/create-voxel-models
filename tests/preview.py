@@ -10,9 +10,9 @@ glass = palette.add_color((0, 128, 255), ior=1.0, transmission=0.95, roughness=0
 gold = palette.add_color((239, 191, 4), roughness=0.0, metallic=1.0)
 
 model = Model((3, 1, 1), palette)
-model.put((0, 0, 0), red)
-model.put((1, 0, 0), glass)
-model.put((2, 0, 0), gold)
+model.put(red, (0, 0, 0))
+model.put(glass, (1, 0, 0))
+model.put(gold, (2, 0, 0))
 
 scene = Scene()
 root = scene.create_root_node("root")

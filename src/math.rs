@@ -25,6 +25,13 @@ impl Vec3 {
         inner: glam::DVec3::ONE,
     };
 
+    #[staticmethod]
+    pub fn splat(t: f64) -> Self {
+        Self {
+            inner: glam::DVec3::splat(t),
+        }
+    }
+
     #[new]
     pub fn __new__(x: f64, y: f64, z: f64) -> Self {
         Self {
