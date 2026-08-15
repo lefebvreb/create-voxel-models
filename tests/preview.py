@@ -6,8 +6,8 @@ from voxels import CameraAngle, Interpolation, Model, Palette, Quat, Scene, Vec3
 
 palette = Palette()
 red = palette.add_color((255, 0, 0), emissive=2.0)
-glass = palette.add_color((0, 128, 255), ior=1.33, transmission=0.9, roughness=0.1)
-gold = palette.add_color((239, 191, 4), roughness=0, metallic=1.0)
+glass = palette.add_color((0, 128, 255), ior=1.0, transmission=0.95, roughness=0.05)
+gold = palette.add_color((239, 191, 4), roughness=0.0, metallic=1.0)
 
 model = Model((3, 1, 1), palette)
 model.put((0, 0, 0), red)
@@ -24,6 +24,8 @@ anim = scene.create_anim("wiggle")
 anim.add_rotation(child, [0.0, 1.0, 2.0], [Quat.IDENTITY, Quat.from_rotation_y(180), Quat.IDENTITY], interpolation=Interpolation.Linear)
 
 # --- Render ---
+
+scene.export_glb(".local/models/scene.glb")
 
 angles = [CameraAngle(0.0, 0.0), CameraAngle(90.0, 30.0, zoom=1.5)]
 times = [0.0, 1.0, 2.0]
