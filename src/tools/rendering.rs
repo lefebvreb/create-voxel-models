@@ -97,12 +97,12 @@ pub fn render(
             for (angle_idx, angle) in angles.iter().enumerate() {
                 position_camera(ra.app.world_mut(), ra.camera, center, base_distance, angle);
                 let (width, height, pixels) = capture_screenshot(&mut ra.app, &ra.target)?;
-                let filename = output_filename(time_idx, angle_idx);
+                let file = output_dir.join(output_filename(time_idx, angle_idx));
                 std::fs::write(
-                    output_dir.join(&filename),
+                    output_dir.join(&file),
                     encode_png(width, height, &pixels, ColorType::Rgb)?,
                 )?;
-                files.push(filename);
+                files.push(file);
             }
         }
 
@@ -112,7 +112,7 @@ pub fn render(
         // lights, and render target are shared app-wide state and stay alive across calls.
         ra.app.world_mut().entity_mut(world_root).despawn();
 
-        Ok(RenderOutput { dir: output_dir, files })
+        Ok(RenderOutput { files })
     })
 }
 
@@ -509,8 +509,8 @@ fn output_dir() -> PathBuf {
     std::env::temp_dir().join(format!("voxels-render-{}-{}", std::process::id(), nanos))
 }
 
-fn output_filename(time_idx: usize, angle_idx: usize) -> PathBuf {
-    PathBuf::from(format!("t{time_idx}_a{angle_idx}.png"))
+fn output_filename(time_idx: usize, angle_idx: usize) -> String {
+    format!("t{time_idx}_a{angle_idx}.png")
 }
 
 #[cfg(test)]

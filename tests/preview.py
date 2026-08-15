@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from voxels import CameraAngle, Interpolation, Model, Palette, Quat, Scene, Vec3, Volume
 
 # --- Create Scene ---
@@ -7,7 +5,7 @@ from voxels import CameraAngle, Interpolation, Model, Palette, Quat, Scene, Vec3
 palette = Palette()
 red = palette.add_color((255, 0, 0), emissive=2.0)
 glass = palette.add_color(
-    (0, 128, 255), ior=1.0, transmission=0.95, roughness=0.05, volume=Volume((0, 128, 255), 2.0, 1.0)
+    (0, 128, 255), ior=1.0, transmission=0.95, roughness=0.05, volume=Volume((0, 128, 255), 2.0)
 )
 gold = palette.add_color((239, 191, 4), roughness=0.0, metallic=1.0)
 
@@ -32,5 +30,4 @@ scene.export_glb(".local/models/scene.glb")
 angles = [CameraAngle(0.0, 0.0), CameraAngle(90.0, 30.0, zoom=1.5)]
 times = [0.0, 1.0, 2.0]
 out = scene.render(angles, times=times, animation="wiggle")
-for f in out.files:
-    print(Path(out.dir) / f)
+for f in out.files: print(f)

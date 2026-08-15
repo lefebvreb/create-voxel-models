@@ -133,8 +133,6 @@ class Quat:
 @final
 class RenderOutput:
     @property
-    def dir(self, /) -> Path: ...
-    @property
     def files(self, /) -> list[Path]: ...
 
 @final

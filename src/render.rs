@@ -21,6 +21,5 @@ impl CameraAngle {
 
 #[pyclass(frozen, get_all)]
 pub struct RenderOutput {
-    pub dir: PathBuf,
     pub files: Vec<PathBuf>,
 }
