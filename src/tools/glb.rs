@@ -271,6 +271,7 @@ fn build_material(
 
     if let Some(volume) = material.volume {
         extensions.volume = Some(gltf::KhrMaterialsVolume {
+            thickness_factor: volume.thickness,
             attenuation_color: [
                 volume.color.0 as f32 / 255.0,
                 volume.color.1 as f32 / 255.0,

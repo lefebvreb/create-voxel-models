@@ -251,11 +251,10 @@ pub struct KhrMaterialsEmissiveStrength {
     pub emissive_strength: f64,
 }
 
-/// `thicknessFactor` is deliberately never written: its spec default (0.0, thin-walled) is left
-/// as-is since this exporter has no per-voxel thickness data to offer beyond the geometry itself.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsVolume {
+    pub thickness_factor: f64,
     pub attenuation_color: [f32; 3],
     pub attenuation_distance: f64,
 }
@@ -336,6 +335,7 @@ mod tests {
             }),
             emissive_strength: None,
             volume: Some(KhrMaterialsVolume {
+                thickness_factor: 1.0,
                 attenuation_color: [0.0, 0.5, 1.0],
                 attenuation_distance: 2.5,
             }),
@@ -346,6 +346,7 @@ mod tests {
         assert!(json.contains("\"transmissionFactor\":1.0"));
         assert!(!json.contains("KHR_materials_emissive_strength"));
         assert!(json.contains("\"KHR_materials_volume\""));
+        assert!(json.contains("\"thicknessFactor\":1.0"));
         assert!(json.contains("\"attenuationColor\":[0.0,0.5,1.0]"));
         assert!(json.contains("\"attenuationDistance\":2.5"));
     }

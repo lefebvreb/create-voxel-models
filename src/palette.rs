@@ -36,16 +36,25 @@ pub struct Volume {
     pub color: (u8, u8, u8),
     #[pyo3(get)]
     pub distance: f64,
+    #[pyo3(get)]
+    pub thickness: f64,
 }
 
 #[pymethods]
 impl Volume {
     #[new]
-    pub fn __new__(color: (u8, u8, u8), distance: f64) -> PyResult<Self> {
+    pub fn __new__(color: (u8, u8, u8), distance: f64, thickness: f64) -> PyResult<Self> {
         if distance <= 0.0 {
             return Err(PyValueError::new_err("distance must be greater than 0.0"));
         }
-        Ok(Self { color, distance })
+        if thickness <= 0.0 {
+            return Err(PyValueError::new_err("thickness must be greater than 0.0"));
+        }
+        Ok(Self {
+            color,
+            distance,
+            thickness,
+        })
     }
 }
 

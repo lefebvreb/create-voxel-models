@@ -14,6 +14,7 @@ use crate::palette::{Color, Palette, Volume};
 pub struct VolumeProps {
     pub color: (u8, u8, u8),
     pub distance: f64,
+    pub thickness: f64,
 }
 
 impl From<Volume> for VolumeProps {
@@ -21,6 +22,7 @@ impl From<Volume> for VolumeProps {
         Self {
             color: v.color,
             distance: v.distance,
+            thickness: v.thickness,
         }
     }
 }
@@ -125,11 +127,11 @@ impl PaletteLayout {
     }
 }
 
-type BucketKey = (u64, u64, Option<((u8, u8, u8), u64)>);
+type BucketKey = (u64, u64, Option<((u8, u8, u8), u64, u64)>);
 
 fn bucket_key(ior: f64, emissive: f64, volume: Option<VolumeProps>) -> BucketKey {
     let norm = |x: f64| if x == 0.0 { 0.0 } else { x }; // collapse -0.0 into +0.0
-    let volume_key = volume.map(|v| (v.color, norm(v.distance).to_bits()));
+    let volume_key = volume.map(|v| (v.color, norm(v.distance).to_bits(), norm(v.thickness).to_bits()));
     (norm(ior).to_bits(), norm(emissive).to_bits(), volume_key)
 }
 
@@ -489,6 +491,7 @@ mod tests {
                 volume: Some(VolumeProps {
                     color: (0, 128, 255),
                     distance: 1.0,
+                    thickness: 1.0,
                 }),
                 ..color((255, 0, 0), 0.8)
             },
@@ -496,6 +499,7 @@ mod tests {
                 volume: Some(VolumeProps {
                     color: (255, 128, 0),
                     distance: 1.0,
+                    thickness: 1.0,
                 }),
                 ..color((255, 0, 0), 0.8)
             },
