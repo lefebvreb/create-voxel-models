@@ -8,6 +8,7 @@ mod meshing;
 mod model;
 mod palette;
 mod render;
+mod renderer;
 mod scene;
 mod utils;
 

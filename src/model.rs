@@ -4,7 +4,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, pyclass, pymethods};
 
 use crate::palette::{Color, Palette};
-use crate::render::{self, CameraAngle, RenderOutput};
+use crate::render::{CameraAngle, RenderOutput};
+use crate::renderer::render;
 use crate::scene::{Node, Scene};
 use crate::utils::Int3;
 
@@ -74,6 +75,6 @@ impl Model {
         let scene = Py::new(py, Scene::default())?.into_bound(py);
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
         Node::add_model(node.bind(py).clone(), "model".to_string(), slf.unbind(), None)?;
-        render::render(scene, angles, vec![], None, None, None, background, output_dir)
+        render(scene, angles, vec![], None, None, None, background, output_dir)
     }
 }

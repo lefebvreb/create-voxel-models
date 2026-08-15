@@ -8,7 +8,8 @@ use crate::anim::Anim;
 use crate::glb::export_glb;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
-use crate::render::{self, CameraAngle, RenderOutput};
+use crate::render::{CameraAngle, RenderOutput};
+use crate::renderer::render;
 use crate::utils::Dict;
 
 #[pyclass]
@@ -72,8 +73,8 @@ impl Scene {
         Ok(())
     }
 
-    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None, background = None, output_dir = None))]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None, background = None, output_dir = None))]
     pub fn render(
         slf: Bound<Self>,
         angles: Vec<CameraAngle>,
@@ -84,7 +85,7 @@ impl Scene {
         background: Option<(u8, u8, u8)>,
         output_dir: Option<PathBuf>,
     ) -> PyResult<RenderOutput> {
-        render::render(slf, angles, times, animation, include, exclude, background, output_dir)
+        render(slf, angles, times, animation, include, exclude, background, output_dir)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
