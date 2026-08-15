@@ -1,8 +1,7 @@
 //! FULLY VIBE-CODED
 
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bevy::asset::io::memory::{Dir, MemoryAssetReader};
@@ -134,29 +133,27 @@ struct RenderApp {
     next_id: u64,
 }
 
-thread_local! {
-    // `&'static mut`, not `RenderApp`: Bevy's `App` isn't safe to drop during Rust's own
-    // thread-local teardown at interpreter shutdown (destructor order across independent
-    // thread-locals - some of which Bevy's task pools/diagnostics register internally - is
-    // unspecified, and unwinding into an already-torn-down one panics). `Box::leak` means this
-    // thread-local's own destructor only drops a plain reference, never touching `RenderApp`
-    // itself, so it's simply never torn down - harmless, since the OS reclaims everything at
-    // process exit anyway.
-    static RENDER_APP: RefCell<Option<&'static mut RenderApp>> = const { RefCell::new(None) };
-}
+// SAFETY: `App` isn't `Send` solely because of its boxed `runner: Box<dyn FnOnce(App) -> AppExit>`
+// field - we never call `App::run()` (the app is driven by hand via `app.update()`), so that
+// closure is never invoked or inspected, and there's nothing else thread-affine about it. Every
+// access to `RenderApp` goes through the `Mutex` below, which serializes access to at most one
+// thread at a time regardless.
+unsafe impl Send for RenderApp {}
+
+// A single global instance behind a `Mutex`, not one per thread: this is a dev tool, not
+// something meant to render concurrently, so there's no need for more than one headless renderer
+// at a time. A plain `static` (unlike a `thread_local`) is simply never dropped at process exit
+// under normal termination, which conveniently sidesteps needing to prove `App` is safe to tear
+// down during Rust's own shutdown sequence at all.
+static RENDER_APP: LazyLock<Mutex<RenderApp>> = LazyLock::new(|| Mutex::new(RenderApp::new()));
 
 fn with_render_app<T>(f: impl FnOnce(&mut RenderApp) -> PyResult<T>) -> PyResult<T> {
-    RENDER_APP.with(|cell| {
-        let mut slot = cell.borrow_mut();
-        if slot.is_none() {
-            *slot = Some(Box::leak(Box::new(RenderApp::new()?)));
-        }
-        f(slot.as_mut().expect("just initialized above if empty"))
-    })
+    let mut app = RENDER_APP.lock().unwrap();
+    f(&mut app)
 }
 
 impl RenderApp {
-    fn new() -> PyResult<Self> {
+    fn new() -> Self {
         let dir = Dir::default();
         let mut app = App::new();
         app.register_asset_source(
@@ -204,13 +201,13 @@ impl RenderApp {
             ))
             .id();
 
-        Ok(Self {
+        Self {
             app,
             dir,
             camera,
             target,
             next_id: 0,
-        })
+        }
     }
 
     fn load_gltf(
