@@ -18,5 +18,6 @@ stubs:
 
 # Compiles the project in debug mode, bundles it as a python module and runs all test scripts in a venv.
 test:
+    cargo +stable test
     maturin develop -- -Awarnings
     @for f in `ls tests`; do echo -e "\033[1mpython $f\033[0m" && .venv/bin/python tests/$f; done

@@ -3,8 +3,8 @@
 mod glb;
 mod gltf;
 mod meshing;
-mod renderer;
+mod rendering;
 mod utils;
 
 pub use glb::export_glb;
-pub use renderer::render;
+pub use rendering::render;
