@@ -18,7 +18,7 @@ mod voxels {
     #[pymodule_export]
     use crate::model::Model;
     #[pymodule_export]
-    use crate::palette::{Color, Palette};
+    use crate::palette::{Color, Palette, Volume};
     #[pymodule_export]
     use crate::render::{CameraAngle, RenderOutput};
     #[pymodule_export]

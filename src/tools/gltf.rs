@@ -220,11 +220,13 @@ pub struct MaterialExtensions {
     pub transmission: Option<KhrMaterialsTransmission>,
     #[serde(rename = "KHR_materials_emissive_strength", skip_serializing_if = "Option::is_none")]
     pub emissive_strength: Option<KhrMaterialsEmissiveStrength>,
+    #[serde(rename = "KHR_materials_volume", skip_serializing_if = "Option::is_none")]
+    pub volume: Option<KhrMaterialsVolume>,
 }
 
 impl MaterialExtensions {
     pub fn is_empty(&self) -> bool {
-        self.ior.is_none() && self.transmission.is_none() && self.emissive_strength.is_none()
+        self.ior.is_none() && self.transmission.is_none() && self.emissive_strength.is_none() && self.volume.is_none()
     }
 }
 
@@ -247,6 +249,15 @@ pub struct KhrMaterialsTransmission {
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsEmissiveStrength {
     pub emissive_strength: f64,
+}
+
+/// `thicknessFactor` is deliberately never written: its spec default (0.0, thin-walled) is left
+/// as-is since this exporter has no per-voxel thickness data to offer beyond the geometry itself.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KhrMaterialsVolume {
+    pub attenuation_color: [f32; 3],
+    pub attenuation_distance: f64,
 }
 
 #[derive(Serialize)]
@@ -324,12 +335,19 @@ mod tests {
                 transmission_texture: TextureInfo { index: 2 },
             }),
             emissive_strength: None,
+            volume: Some(KhrMaterialsVolume {
+                attenuation_color: [0.0, 0.5, 1.0],
+                attenuation_distance: 2.5,
+            }),
         };
         let json = serde_json::to_string(&extensions).unwrap();
         assert!(json.contains("\"KHR_materials_ior\":{\"ior\":1.33}"));
         assert!(json.contains("\"KHR_materials_transmission\""));
         assert!(json.contains("\"transmissionFactor\":1.0"));
         assert!(!json.contains("KHR_materials_emissive_strength"));
+        assert!(json.contains("\"KHR_materials_volume\""));
+        assert!(json.contains("\"attenuationColor\":[0.0,0.5,1.0]"));
+        assert!(json.contains("\"attenuationDistance\":2.5"));
     }
 
     #[test]

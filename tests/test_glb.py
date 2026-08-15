@@ -3,11 +3,11 @@ import struct
 import tempfile
 from pathlib import Path
 
-from voxels import Interpolation, Model, Palette, Quat, Scene, Vec3
+from voxels import Interpolation, Model, Palette, Quat, Scene, Vec3, Volume
 
 palette = Palette()
 red = palette.add_color((255, 0, 0), emissive=2.0)
-glass = palette.add_color((0, 128, 255), ior=1.33, transmission=0.8)
+glass = palette.add_color((0, 128, 255), ior=1.33, transmission=0.8, volume=Volume((0, 128, 255), 2.0))
 gold = palette.add_color((239, 191, 4), roughness=0, metallic=1.0)
 
 model = Model((3, 1, 1), palette)
@@ -49,6 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert "KHR_materials_transmission" in root_json["extensionsUsed"]
     assert "KHR_materials_ior" in root_json["extensionsUsed"]
     assert "KHR_materials_emissive_strength" in root_json["extensionsUsed"]
+    assert "KHR_materials_volume" in root_json["extensionsUsed"]
 
     bin_chunk_offset = 20 + json_chunk_len
     bin_chunk_len, bin_chunk_type = struct.unpack_from("<I4s", data, bin_chunk_offset)

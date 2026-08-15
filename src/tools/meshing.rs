@@ -5,9 +5,25 @@ use std::collections::HashMap;
 use pyo3::{Bound, PyResult};
 
 use crate::model::Model;
-use crate::palette::{Color, Palette};
+use crate::palette::{Color, Palette, Volume};
 
 // Voxel grid axes map directly onto glTF's X/Y/Z with no remap: x -> X, y -> Y (up), z -> Z.
+
+/// Plain snapshot of `Volume`, decoupled from pyo3 for the same reason as `ColorProps` below.
+#[derive(Clone, Copy)]
+pub struct VolumeProps {
+    pub color: (u8, u8, u8),
+    pub distance: f64,
+}
+
+impl From<Volume> for VolumeProps {
+    fn from(v: Volume) -> Self {
+        Self {
+            color: v.color,
+            distance: v.distance,
+        }
+    }
+}
 
 /// Plain snapshot of the palette-relevant `Color` fields, decoupled from pyo3 so the meshing and
 /// atlas-layout logic below is pure Rust and independently testable.
@@ -19,6 +35,7 @@ struct ColorProps {
     ior: f64,
     transmission: f64,
     emissive: f64,
+    volume: Option<VolumeProps>,
 }
 
 impl From<&Color> for ColorProps {
@@ -30,6 +47,7 @@ impl From<&Color> for ColorProps {
             ior: c.ior,
             transmission: c.transmission,
             emissive: c.emissive,
+            volume: c.volume.map(VolumeProps::from),
         }
     }
 }
@@ -49,6 +67,7 @@ pub struct MeshData {
 pub struct MaterialData {
     pub ior: f64,
     pub emissive: f64,
+    pub volume: Option<VolumeProps>,
     pub atlas_width: u32,
     pub atlas_height: u32,
     pub base_color: Vec<[u8; 3]>,
@@ -80,13 +99,14 @@ pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
 //
 // `rgb`, `roughness`/`metallic` and `transmission` all have direct glTF texture equivalents
 // (baseColor, the metallicRoughness texture's G/B channels, and KHR_materials_transmission's
-// transmissionTexture), so they're baked per-color into small atlas rows below. `ior` and
-// `emissive` have no texture variant in glTF - they're material-level scalars only - so they are
+// transmissionTexture), so they're baked per-color into small atlas rows below. `ior`, `emissive`
+// and `volume` have no texture variant in glTF - they're material-level scalars only - so they are
 // the sole reason a palette ever needs more than one material bucket.
 
 struct MaterialBucket {
     ior: f64,
     emissive: f64,
+    volume: Option<VolumeProps>,
     /// Palette color ids, in atlas texel order.
     colors: Vec<u8>,
 }
@@ -105,23 +125,27 @@ impl PaletteLayout {
     }
 }
 
-fn bucket_key(ior: f64, emissive: f64) -> (u64, u64) {
+type BucketKey = (u64, u64, Option<((u8, u8, u8), u64)>);
+
+fn bucket_key(ior: f64, emissive: f64, volume: Option<VolumeProps>) -> BucketKey {
     let norm = |x: f64| if x == 0.0 { 0.0 } else { x }; // collapse -0.0 into +0.0
-    (norm(ior).to_bits(), norm(emissive).to_bits())
+    let volume_key = volume.map(|v| (v.color, norm(v.distance).to_bits()));
+    (norm(ior).to_bits(), norm(emissive).to_bits(), volume_key)
 }
 
 fn build_palette_layout(colors: &[ColorProps]) -> PaletteLayout {
-    let mut buckets_by_key: HashMap<(u64, u64), usize> = HashMap::new();
+    let mut buckets_by_key: HashMap<BucketKey, usize> = HashMap::new();
     let mut layout = PaletteLayout {
         buckets: Vec::new(),
         color_refs: Vec::with_capacity(colors.len()),
     };
     for (id, c) in colors.iter().enumerate() {
-        let key = bucket_key(c.ior, c.emissive);
+        let key = bucket_key(c.ior, c.emissive, c.volume);
         let bucket = *buckets_by_key.entry(key).or_insert_with(|| {
             layout.buckets.push(MaterialBucket {
                 ior: c.ior,
                 emissive: c.emissive,
+                volume: c.volume,
                 colors: Vec::new(),
             });
             layout.buckets.len() - 1
@@ -154,6 +178,7 @@ fn build_palette_data(colors: &[ColorProps], layout: &PaletteLayout) -> PaletteD
             MaterialData {
                 ior: bucket.ior,
                 emissive: bucket.emissive,
+                volume: bucket.volume,
                 atlas_width: bucket.colors.len() as u32,
                 atlas_height: 1,
                 base_color,
@@ -378,6 +403,7 @@ mod tests {
             ior: 1.5,
             transmission,
             emissive: 0.0,
+            volume: None,
         }
     }
 
@@ -457,6 +483,31 @@ mod tests {
     }
 
     #[test]
+    fn distinct_volume_creates_separate_buckets() {
+        let colors = vec![
+            ColorProps {
+                volume: Some(VolumeProps {
+                    color: (0, 128, 255),
+                    distance: 1.0,
+                }),
+                ..color((255, 0, 0), 0.8)
+            },
+            ColorProps {
+                volume: Some(VolumeProps {
+                    color: (255, 128, 0),
+                    distance: 1.0,
+                }),
+                ..color((255, 0, 0), 0.8)
+            },
+        ];
+        let layout = build_palette_layout(&colors);
+
+        assert_eq!(layout.buckets.len(), 2);
+        assert_eq!(layout.buckets[0].colors.len(), 1);
+        assert_eq!(layout.buckets[1].colors.len(), 1);
+    }
+
+    #[test]
     fn shared_bucket_atlas_orders_colors_by_index() {
         let colors = vec![color((10, 20, 30), 0.0), color((40, 50, 60), 0.0)];
         let layout = build_palette_layout(&colors);
@@ -475,6 +526,6 @@ mod tests {
 
     #[test]
     fn bucket_key_normalizes_negative_zero() {
-        assert_eq!(bucket_key(0.0, 0.0), bucket_key(-0.0, -0.0));
+        assert_eq!(bucket_key(0.0, 0.0, None), bucket_key(-0.0, -0.0, None));
     }
 }

@@ -269,6 +269,18 @@ fn build_material(
         (None, None)
     };
 
+    if let Some(volume) = material.volume {
+        extensions.volume = Some(gltf::KhrMaterialsVolume {
+            attenuation_color: [
+                volume.color.0 as f32 / 255.0,
+                volume.color.1 as f32 / 255.0,
+                volume.color.2 as f32 / 255.0,
+            ],
+            attenuation_distance: volume.distance,
+        });
+        extensions_used.insert("KHR_materials_volume");
+    }
+
     let index = root.materials.len() as u32;
     root.materials.push(gltf::Material {
         name: None,

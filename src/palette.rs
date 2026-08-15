@@ -17,6 +17,8 @@ pub struct Color {
     #[pyo3(get)]
     pub emissive: f64,
     #[pyo3(get)]
+    pub volume: Option<Volume>,
+    #[pyo3(get)]
     pub palette: Py<Palette>,
 }
 
@@ -24,6 +26,26 @@ pub struct Color {
 impl Color {
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.palette)
+    }
+}
+
+#[pyclass(frozen, from_py_object)]
+#[derive(Copy, Clone)]
+pub struct Volume {
+    #[pyo3(get)]
+    pub color: (u8, u8, u8),
+    #[pyo3(get)]
+    pub distance: f64,
+}
+
+#[pymethods]
+impl Volume {
+    #[new]
+    pub fn __new__(color: (u8, u8, u8), distance: f64) -> PyResult<Self> {
+        if distance <= 0.0 {
+            return Err(PyValueError::new_err("distance must be greater than 0.0"));
+        }
+        Ok(Self { color, distance })
     }
 }
 
@@ -40,7 +62,8 @@ impl Palette {
         Self::default()
     }
 
-    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0))]
+    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
+    #[allow(clippy::too_many_arguments)]
     pub fn add_color(
         slf: Bound<Self>,
         rgb: (u8, u8, u8),
@@ -49,6 +72,7 @@ impl Palette {
         ior: f64,
         transmission: f64,
         emissive: f64,
+        volume: Option<Volume>,
     ) -> PyResult<Py<Color>> {
         if !(0.0..=1.0).contains(&roughness) {
             return Err(PyValueError::new_err("roughness must be between 0.0 and 1.0"));
@@ -83,6 +107,7 @@ impl Palette {
                 ior,
                 transmission,
                 emissive,
+                volume,
                 index: u8::try_from(index).expect("color index should fit in a byte"),
                 palette: slf.clone().unbind(),
             },
