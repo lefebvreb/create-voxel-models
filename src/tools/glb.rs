@@ -127,7 +127,7 @@ fn group_meshes_by_node<'a>(
     let mut order: Vec<HashPy<Node>> = Vec::new();
     let mut groups: HashMap<HashPy<Node>, Vec<Py<Mesh>>> = HashMap::new();
     for mesh in meshes {
-        let parent = HashPy(mesh.borrow(py).parent.clone_ref(py));
+        let parent = HashPy(mesh.get().parent.clone_ref(py));
         if !groups.contains_key(&parent) {
             order.push(HashPy(parent.0.clone_ref(py)));
         }
