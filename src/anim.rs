@@ -73,7 +73,7 @@ impl Anim {
     }
 }
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub enum Interpolation {
     Linear,

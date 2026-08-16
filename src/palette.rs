@@ -29,7 +29,7 @@ impl Color {
     }
 }
 
-#[pyclass(frozen, from_py_object, get_all)]
+#[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Volume {
     pub color: (u8, u8, u8),

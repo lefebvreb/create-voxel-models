@@ -110,7 +110,7 @@ impl Scene {
     }
 }
 
-#[pyclass(frozen, get_all)]
+#[pyclass(get_all, frozen)]
 pub struct Node {
     pub name: String,
     pub translation: Option<Vec3>,
@@ -185,7 +185,7 @@ impl Node {
     }
 }
 
-#[pyclass(frozen, get_all)]
+#[pyclass(get_all, frozen)]
 pub struct Mesh {
     pub name: String,
     pub translation: Option<Vec3>,

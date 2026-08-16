@@ -5,7 +5,7 @@ use pyo3::{pyclass, pymethods};
 
 // todo(ben): is this even necessary? Should python just use float 3-tuples instead?
 /// A 3-dimensional real column vector, with double precision components.
-#[pyclass(frozen, from_py_object)]
+#[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Vec3 {
     pub inner: glam::DVec3,
@@ -92,7 +92,7 @@ impl Vec3 {
 }
 
 /// A quaternion, with double precisions components.
-#[pyclass(frozen, from_py_object)]
+#[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Quat {
     pub inner: glam::DQuat,

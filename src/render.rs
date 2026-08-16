@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use pyo3::{pyclass, pymethods};
 
-#[pyclass(frozen, from_py_object, get_all)]
+#[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct CameraAngle {
     pub yaw: f64,
@@ -19,7 +19,7 @@ impl CameraAngle {
     }
 }
 
-#[pyclass(frozen, get_all)]
+#[pyclass(get_all, frozen)]
 pub struct RenderOutput {
     pub files: Vec<PathBuf>,
 }
