@@ -37,7 +37,6 @@ const FIT_PADDING: f64 = 1.3;
 const MIN_RADIUS: f64 = 0.5;
 const MAX_PITCH_DEG: f64 = 89.9;
 
-#[allow(clippy::too_many_arguments)]
 pub fn render(
     scene: Bound<Scene>,
     angles: Vec<CameraAngle>,
@@ -45,7 +44,6 @@ pub fn render(
     animation: Option<String>,
     include: Option<Vec<String>>,
     exclude: Option<Vec<String>>,
-    background: Option<(u8, u8, u8)>,
 ) -> PyResult<RenderOutput> {
     if angles.is_empty() {
         return Err(PyValueError::new_err("angles must not be empty"));
@@ -70,7 +68,7 @@ pub fn render(
         let animation_setup = animation_clip.map(|clip| setup_animation(ra.app.world_mut(), clip));
 
         if let Some(mut camera) = ra.app.world_mut().get_mut::<Camera>(ra.camera) {
-            camera.clear_color = ClearColorConfig::Custom(background_color(background));
+            camera.clear_color = ClearColorConfig::Custom(Color::srgb_u8(46, 46, 46));
         }
 
         // Settle transform/visibility propagation before measuring bounds.
@@ -384,11 +382,6 @@ fn setup_lighting(world: &mut World) {
         brightness: 120.0,
         ..default()
     });
-}
-
-fn background_color(background: Option<(u8, u8, u8)>) -> Color {
-    let (r, g, b) = background.unwrap_or((46, 46, 46));
-    Color::srgb_u8(r, g, b)
 }
 
 // --- Camera bounds and placement ---

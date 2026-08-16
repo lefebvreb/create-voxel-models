@@ -72,8 +72,7 @@ impl Scene {
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None, background = None))]
+    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None))]
     pub fn render(
         slf: Bound<Self>,
         angles: Vec<CameraAngle>,
@@ -81,9 +80,8 @@ impl Scene {
         animation: Option<String>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
-        background: Option<(u8, u8, u8)>,
     ) -> PyResult<RenderOutput> {
-        render(slf, angles, times, animation, include, exclude, background)
+        render(slf, angles, times, animation, include, exclude)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
