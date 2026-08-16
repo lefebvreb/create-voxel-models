@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs::write;
 use std::path::PathBuf;
 
@@ -15,17 +15,22 @@ use crate::utils::Dict;
 #[pyclass]
 #[derive(Default)]
 pub struct Scene {
-    pub anims: Vec<Py<Anim>>,
-    pub anim_names: HashSet<String>,
-    pub nodes: Vec<Py<Node>>,
-    pub meshes: Vec<Py<Mesh>>,
+    pub anims: HashMap<String, Py<Anim>>,
+    pub nodes: HashMap<String, Py<Node>>,
+    pub meshes: HashMap<String, Py<Mesh>>,
 }
 
 impl Scene {
     fn add_node(slf: &Bound<Self>, node: Node) -> PyResult<Py<Node>> {
         let mut slf_brw = slf.borrow_mut();
+        if slf_brw.nodes.contains_key(&node.name) {
+            return Err(PyValueError::new_err(
+                "there is already a node with this name, and duplicates are disallowed",
+            ));
+        }
+        let name = node.name.clone();
         let node = Py::new(slf.py(), node)?;
-        slf_brw.nodes.push(node.clone_ref(slf.py()));
+        slf_brw.nodes.insert(name, node.clone_ref(slf.py()));
         Ok(node)
     }
 }
@@ -56,7 +61,7 @@ impl Scene {
     #[pyo3(signature = (name, *, extras = None))]
     pub fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
         let mut slf_brw = slf.borrow_mut();
-        if slf_brw.anim_names.contains(&name) {
+        if slf_brw.anims.contains_key(&name) {
             return Err(PyValueError::new_err(
                 "there is already an animation with this name, and duplicates are disallowed",
             ));
@@ -70,8 +75,7 @@ impl Scene {
                 scene: slf.clone().unbind(),
             },
         )?;
-        slf_brw.anims.push(anim.clone_ref(slf.py()));
-        slf_brw.anim_names.insert(name);
+        slf_brw.anims.insert(name, anim.clone_ref(slf.py()));
         Ok(anim)
     }
 
@@ -94,9 +98,9 @@ impl Scene {
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.anims.iter().try_for_each(|anim| visit.call(anim))?;
-        self.nodes.iter().try_for_each(|node| visit.call(node))?;
-        self.meshes.iter().try_for_each(|model| visit.call(model))
+        self.anims.values().try_for_each(|anim| visit.call(anim))?;
+        self.nodes.values().try_for_each(|node| visit.call(node))?;
+        self.meshes.values().try_for_each(|model| visit.call(model))
     }
 
     fn __clear__(&mut self) {
@@ -149,6 +153,12 @@ impl Node {
 
     #[pyo3(signature = (name, model, *, extras = None))]
     pub fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
+        let mut scene = slf.get().scene.borrow_mut(slf.py());
+        if scene.meshes.contains_key(&name) {
+            return Err(PyValueError::new_err(
+                "there is already a mesh with this name, and duplicates are disallowed",
+            ));
+        }
         let mesh = Py::new(
             slf.py(),
             Mesh {
@@ -158,8 +168,7 @@ impl Node {
                 model,
             },
         )?;
-        let mut scene = slf.get().scene.borrow_mut(slf.py());
-        scene.meshes.push(mesh.clone_ref(slf.py()));
+        scene.meshes.insert(name, mesh.clone_ref(slf.py()));
         Ok(mesh)
     }
 

@@ -25,9 +25,9 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     let mut palette_cache: HashMap<HashPy<Palette>, Vec<u32>> = HashMap::new();
     let mut model_cache: HashMap<HashPy<Model>, Vec<gltf::Primitive>> = HashMap::new();
 
-    let (mut gltf_nodes, node_index, roots) = build_nodes(py, &scene_ref.nodes);
+    let (mut gltf_nodes, node_index, roots) = build_nodes(py, scene_ref.nodes.values());
 
-    for (node, meshes) in group_meshes_by_node(py, &scene_ref.meshes) {
+    for (node, meshes) in group_meshes_by_node(py, scene_ref.meshes.values()) {
         let mut primitives = Vec::new();
         for mesh in &meshes {
             let model = mesh.borrow(py).model.clone_ref(py);
@@ -59,7 +59,7 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     root.scenes = vec![gltf::Scene { nodes: roots }];
     root.scene = Some(0);
 
-    for anim in &scene_ref.anims {
+    for anim in scene_ref.anims.values() {
         root.animations
             .push(build_animation(py, anim, &node_index, &mut writer));
     }
@@ -80,15 +80,18 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
 
 // --- Node hierarchy: `Scene.nodes` is a flat Vec with parent back-links, not a tree ---
 
-fn build_nodes(py: pyo3::Python, nodes: &[Py<Node>]) -> (Vec<gltf::Node>, HashMap<HashPy<Node>, u32>, Vec<u32>) {
+fn build_nodes<'a>(
+    py: pyo3::Python,
+    nodes: impl Iterator<Item = &'a Py<Node>> + Clone,
+) -> (Vec<gltf::Node>, HashMap<HashPy<Node>, u32>, Vec<u32>) {
     let node_index: HashMap<HashPy<Node>, u32> = nodes
-        .iter()
+        .clone()
         .enumerate()
         .map(|(i, node)| (HashPy(node.clone_ref(py)), i as u32))
         .collect();
 
     let mut gltf_nodes: Vec<gltf::Node> = nodes
-        .iter()
+        .clone()
         .map(|node| {
             let node_ref = node.get();
             gltf::Node {
@@ -117,7 +120,10 @@ fn build_nodes(py: pyo3::Python, nodes: &[Py<Node>]) -> (Vec<gltf::Node>, HashMa
     (gltf_nodes, node_index, roots)
 }
 
-fn group_meshes_by_node(py: pyo3::Python, meshes: &[Py<Mesh>]) -> Vec<(Py<Node>, Vec<Py<Mesh>>)> {
+fn group_meshes_by_node<'a>(
+    py: pyo3::Python,
+    meshes: impl Iterator<Item = &'a Py<Mesh>>,
+) -> Vec<(Py<Node>, Vec<Py<Mesh>>)> {
     let mut order: Vec<HashPy<Node>> = Vec::new();
     let mut groups: HashMap<HashPy<Node>, Vec<Py<Mesh>>> = HashMap::new();
     for mesh in meshes {
