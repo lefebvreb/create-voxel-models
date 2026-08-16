@@ -96,7 +96,15 @@ impl Model {
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
         let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
-        Node::add_model(node.bind(slf.py()).clone(), "model".to_string(), slf.unbind(), None)?;
+        Node::add_model(
+            node.bind(slf.py()).clone(),
+            "model".to_string(),
+            slf.unbind(),
+            None,
+            None,
+            None,
+            None,
+        )?;
         render(scene, angles, vec![], None, None, None)
     }
 }
