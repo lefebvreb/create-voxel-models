@@ -20,4 +20,4 @@ stubs:
 test:
     RUSTFLAGS="-Awarnings" cargo +stable test
     maturin develop -- -Awarnings
-    @for f in `ls tests`; do echo -e "\033[1mpython $f\033[0m" && .venv/bin/python tests/$f; done
+    @for f in `ls tests/*.py`; do echo -e "\033[1mpython $f\033[0m" && .venv/bin/python $f; done

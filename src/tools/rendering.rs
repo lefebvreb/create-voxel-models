@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use bevy::asset::io::memory::{Dir, MemoryAssetReader};
 use bevy::asset::io::{AssetSourceBuilder, AssetSourceId};
+use bevy::asset::uuid::Uuid;
 use bevy::asset::{LoadState, RenderAssetUsages};
 use bevy::camera::primitives::Aabb;
 use bevy::camera::{Hdr, RenderTarget};
@@ -495,11 +495,8 @@ fn capture_screenshot(app: &mut App, target: &Handle<Image>) -> PyResult<(u32, u
 // --- Output paths ---
 
 fn output_dir() -> PathBuf {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    std::env::temp_dir().join(format!("voxels-render-{}-{}", std::process::id(), nanos))
+    let mut buf = [0; 32];
+    std::env::temp_dir().join(Uuid::new_v4().as_simple().encode_lower(&mut buf))
 }
 
 fn output_filename(time_idx: usize, angle_idx: usize) -> String {
