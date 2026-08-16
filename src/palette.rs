@@ -29,14 +29,11 @@ impl Color {
     }
 }
 
-#[pyclass(frozen, from_py_object)]
+#[pyclass(frozen, from_py_object, get_all)]
 #[derive(Copy, Clone)]
 pub struct Volume {
-    #[pyo3(get)]
     pub color: (u8, u8, u8),
-    #[pyo3(get)]
     pub distance: f64,
-    #[pyo3(get)]
     pub thickness: f64,
 }
 

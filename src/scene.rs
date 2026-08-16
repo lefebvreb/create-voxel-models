@@ -110,18 +110,14 @@ impl Scene {
     }
 }
 
-#[pyclass(frozen)]
+#[pyclass(frozen, get_all)]
 pub struct Node {
-    #[pyo3(get)]
     pub name: String,
     pub translation: Option<Vec3>,
     pub rotation: Option<Quat>,
     pub scale: Option<Vec3>,
-    #[pyo3(get)]
     pub extras: Option<Dict>,
-    #[pyo3(get)]
     pub parent: Option<Py<Node>>,
-    #[pyo3(get)]
     pub scene: Py<Scene>,
 }
 
@@ -178,15 +174,11 @@ impl Node {
     }
 }
 
-#[pyclass]
+#[pyclass(frozen, get_all)]
 pub struct Mesh {
-    #[pyo3(get)]
     pub name: String,
-    #[pyo3(get)]
     pub extras: Option<Dict>,
-    #[pyo3(get)]
     pub parent: Py<Node>,
-    #[pyo3(get)]
     pub model: Py<Model>,
 }
 
