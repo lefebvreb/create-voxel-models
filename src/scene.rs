@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs::write;
 use std::path::PathBuf;
 
+use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 use crate::anim::Anim;
@@ -15,6 +16,7 @@ use crate::utils::Dict;
 #[derive(Default)]
 pub struct Scene {
     pub anims: Vec<Py<Anim>>,
+    pub anim_names: HashSet<String>,
     pub nodes: Vec<Py<Node>>,
     pub meshes: Vec<Py<Mesh>>,
 }
@@ -53,16 +55,23 @@ impl Scene {
 
     #[pyo3(signature = (name, *, extras = None))]
     pub fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
+        let mut slf_brw = slf.borrow_mut();
+        if slf_brw.anim_names.contains(&name) {
+            return Err(PyValueError::new_err(
+                "there is already an animation with this name, and duplicates are disallowed",
+            ));
+        }
         let anim = Py::new(
             slf.py(),
             Anim {
-                name,
+                name: name.clone(),
                 extras,
                 nodes: HashMap::default(),
                 scene: slf.clone().unbind(),
             },
         )?;
-        slf.borrow_mut().anims.push(anim.clone_ref(slf.py()));
+        slf_brw.anims.push(anim.clone_ref(slf.py()));
+        slf_brw.anim_names.insert(name);
         Ok(anim)
     }
 
