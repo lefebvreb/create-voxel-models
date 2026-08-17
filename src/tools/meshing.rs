@@ -5,11 +5,11 @@ use std::collections::HashMap;
 use pyo3::{Bound, PyResult};
 
 use crate::model::Model;
-use crate::palette::{Color, Palette, Volume};
+use crate::palette::{Material, Palette, Volume};
 
 // Voxel grid axes map directly onto glTF's X/Y/Z with no remap: x -> X, y -> Y (up), z -> Z.
 
-/// Plain snapshot of `Volume`, decoupled from pyo3 for the same reason as `ColorProps` below.
+/// Plain snapshot of `Volume`, decoupled from pyo3 for the same reason as `MaterialProps` below.
 #[derive(Clone, Copy)]
 pub struct VolumeProps {
     pub color: (u8, u8, u8),
@@ -20,17 +20,17 @@ pub struct VolumeProps {
 impl From<Volume> for VolumeProps {
     fn from(v: Volume) -> Self {
         Self {
-            color: v.color,
+            color: (v.color.r, v.color.g, v.color.b),
             distance: v.distance,
             thickness: v.thickness,
         }
     }
 }
 
-/// Plain snapshot of the palette-relevant `Color` fields, decoupled from pyo3 so the meshing and
-/// atlas-layout logic below is pure Rust and independently testable.
+/// Plain snapshot of the palette-relevant `Material` fields, decoupled from pyo3 so the meshing
+/// and atlas-layout logic below is pure Rust and independently testable.
 #[derive(Clone, Copy)]
-struct ColorProps {
+struct MaterialProps {
     rgb: (u8, u8, u8),
     roughness: f64,
     metallic: f64,
@@ -40,16 +40,16 @@ struct ColorProps {
     volume: Option<VolumeProps>,
 }
 
-impl From<&Color> for ColorProps {
-    fn from(c: &Color) -> Self {
+impl From<&Material> for MaterialProps {
+    fn from(m: &Material) -> Self {
         Self {
-            rgb: c.rgb,
-            roughness: c.roughness,
-            metallic: c.metallic,
-            ior: c.ior,
-            transmission: c.transmission,
-            emissive: c.emissive,
-            volume: c.volume.map(VolumeProps::from),
+            rgb: (m.color.r, m.color.g, m.color.b),
+            roughness: m.roughness,
+            metallic: m.metallic,
+            ior: m.ior,
+            transmission: m.transmission,
+            emissive: m.emissive,
+            volume: m.volume.map(VolumeProps::from),
         }
     }
 }
@@ -84,45 +84,45 @@ pub struct PaletteData {
 pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
     let model_ref = model.borrow();
     let palette_ref = model_ref.palette.bind(model.py()).borrow();
-    let colors: Vec<ColorProps> = palette_ref.colors.iter().map(|c| ColorProps::from(c.get())).collect();
-    let layout = build_palette_layout(&colors);
+    let materials: Vec<MaterialProps> = palette_ref.materials.iter().map(|m| MaterialProps::from(m.get())).collect();
+    let layout = build_palette_layout(&materials);
     let (dx, dy, dz) = model_ref.dimensions;
-    Ok(build_mesh([dx, dy, dz], &model_ref.data, &colors, &layout))
+    Ok(build_mesh([dx, dy, dz], &model_ref.data, &materials, &layout))
 }
 
 pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
     let palette_ref = palette.borrow();
-    let colors: Vec<ColorProps> = palette_ref.colors.iter().map(|c| ColorProps::from(c.get())).collect();
-    let layout = build_palette_layout(&colors);
-    Ok(build_palette_data(&colors, &layout))
+    let materials: Vec<MaterialProps> = palette_ref.materials.iter().map(|m| MaterialProps::from(m.get())).collect();
+    let layout = build_palette_layout(&materials);
+    Ok(build_palette_data(&materials, &layout))
 }
 
-// --- Palette layout: groups colors into material buckets and lays out atlas texels ---
+// --- Palette layout: groups materials into buckets and lays out atlas texels ---
 //
 // `rgb`, `roughness`/`metallic` and `transmission` all have direct glTF texture equivalents
 // (baseColor, the metallicRoughness texture's G/B channels, and KHR_materials_transmission's
-// transmissionTexture), so they're baked per-color into small atlas rows below. `ior`, `emissive`
-// and `volume` have no texture variant in glTF - they're material-level scalars only - so they are
-// the sole reason a palette ever needs more than one material bucket.
+// transmissionTexture), so they're baked per-material into small atlas rows below. `ior`,
+// `emissive` and `volume` have no texture variant in glTF - they're material-level scalars only -
+// so they are the sole reason a palette ever needs more than one material bucket.
 
 struct MaterialBucket {
     ior: f64,
     emissive: f64,
     volume: Option<VolumeProps>,
-    /// Palette color ids, in atlas texel order.
-    colors: Vec<u8>,
+    /// Palette material ids, in atlas texel order.
+    material_ids: Vec<u8>,
 }
 
 struct PaletteLayout {
     buckets: Vec<MaterialBucket>,
-    /// Indexed by color id: (bucket index, texel index within that bucket's atlas row).
-    color_refs: Vec<(usize, u32)>,
+    /// Indexed by material id: (bucket index, texel index within that bucket's atlas row).
+    material_refs: Vec<(usize, u32)>,
 }
 
 impl PaletteLayout {
-    fn uv(&self, color_id: u8) -> (usize, [f32; 2]) {
-        let (bucket, texel) = self.color_refs[color_id as usize];
-        let width = self.buckets[bucket].colors.len() as f32;
+    fn uv(&self, material_id: u8) -> (usize, [f32; 2]) {
+        let (bucket, texel) = self.material_refs[material_id as usize];
+        let width = self.buckets[bucket].material_ids.len() as f32;
         (bucket, [(texel as f32 + 0.5) / width, 0.5])
     }
 }
@@ -135,26 +135,26 @@ fn bucket_key(ior: f64, emissive: f64, volume: Option<VolumeProps>) -> BucketKey
     (norm(ior).to_bits(), norm(emissive).to_bits(), volume_key)
 }
 
-fn build_palette_layout(colors: &[ColorProps]) -> PaletteLayout {
+fn build_palette_layout(materials: &[MaterialProps]) -> PaletteLayout {
     let mut buckets_by_key: HashMap<BucketKey, usize> = HashMap::new();
     let mut layout = PaletteLayout {
         buckets: Vec::new(),
-        color_refs: Vec::with_capacity(colors.len()),
+        material_refs: Vec::with_capacity(materials.len()),
     };
-    for (id, c) in colors.iter().enumerate() {
-        let key = bucket_key(c.ior, c.emissive, c.volume);
+    for (id, m) in materials.iter().enumerate() {
+        let key = bucket_key(m.ior, m.emissive, m.volume);
         let bucket = *buckets_by_key.entry(key).or_insert_with(|| {
             layout.buckets.push(MaterialBucket {
-                ior: c.ior,
-                emissive: c.emissive,
-                volume: c.volume,
-                colors: Vec::new(),
+                ior: m.ior,
+                emissive: m.emissive,
+                volume: m.volume,
+                material_ids: Vec::new(),
             });
             layout.buckets.len() - 1
         });
-        let texel = layout.buckets[bucket].colors.len() as u32;
-        layout.buckets[bucket].colors.push(id as u8);
-        layout.color_refs.push((bucket, texel));
+        let texel = layout.buckets[bucket].material_ids.len() as u32;
+        layout.buckets[bucket].material_ids.push(id as u8);
+        layout.material_refs.push((bucket, texel));
     }
     layout
 }
@@ -163,25 +163,25 @@ fn to_u8(x: f64) -> u8 {
     (x.clamp(0.0, 1.0) * 255.0).round() as u8
 }
 
-fn build_palette_data(colors: &[ColorProps], layout: &PaletteLayout) -> PaletteData {
-    let materials = layout
+fn build_palette_data(materials: &[MaterialProps], layout: &PaletteLayout) -> PaletteData {
+    let materials_data = layout
         .buckets
         .iter()
         .map(|bucket| {
-            let mut base_color = Vec::with_capacity(bucket.colors.len());
-            let mut metallic_roughness = Vec::with_capacity(bucket.colors.len());
-            let mut transmission = Vec::with_capacity(bucket.colors.len());
-            for &id in &bucket.colors {
-                let c = &colors[id as usize];
-                base_color.push([c.rgb.0, c.rgb.1, c.rgb.2]);
-                metallic_roughness.push([to_u8(c.roughness), to_u8(c.metallic)]);
-                transmission.push(to_u8(c.transmission));
+            let mut base_color = Vec::with_capacity(bucket.material_ids.len());
+            let mut metallic_roughness = Vec::with_capacity(bucket.material_ids.len());
+            let mut transmission = Vec::with_capacity(bucket.material_ids.len());
+            for &id in &bucket.material_ids {
+                let m = &materials[id as usize];
+                base_color.push([m.rgb.0, m.rgb.1, m.rgb.2]);
+                metallic_roughness.push([to_u8(m.roughness), to_u8(m.metallic)]);
+                transmission.push(to_u8(m.transmission));
             }
             MaterialData {
                 ior: bucket.ior,
                 emissive: bucket.emissive,
                 volume: bucket.volume,
-                atlas_width: bucket.colors.len() as u32,
+                atlas_width: bucket.material_ids.len() as u32,
                 atlas_height: 1,
                 base_color,
                 metallic_roughness,
@@ -189,14 +189,15 @@ fn build_palette_data(colors: &[ColorProps], layout: &PaletteLayout) -> PaletteD
             }
         })
         .collect();
-    PaletteData { materials }
+    PaletteData { materials: materials_data }
 }
 
 // --- Greedy meshing ---
 //
 // A face is culled only when its neighbor voxel is present and either opaque or the exact same
-// color as the current voxel - so color id doubles as the merge key for growing quads, since two
-// voxels only ever render identically (same UV, same visibility) when they share a color id.
+// material as the current voxel - so material id doubles as the merge key for growing quads,
+// since two voxels only ever render identically (same UV, same visibility) when they share a
+// material id.
 //
 // Every quad gets 4 fresh vertices (no sharing across quads) with one flat per-quad normal, and
 // every position is an exact integer grid coordinate cast to f32. That, combined with never
@@ -233,13 +234,13 @@ impl PrimitiveBuilder {
     }
 }
 
-fn build_mesh(dims: [usize; 3], data: &[u8], colors: &[ColorProps], layout: &PaletteLayout) -> MeshData {
+fn build_mesh(dims: [usize; 3], data: &[u8], materials: &[MaterialProps], layout: &PaletteLayout) -> MeshData {
     let [dx, dy, _dz] = dims;
     let voxel_at = |p: [usize; 3]| -> Option<u8> {
         let v = data[p[0] + p[1] * dx + p[2] * dx * dy];
         (v != 0).then(|| v - 1)
     };
-    let is_opaque = |id: u8| colors[id as usize].transmission == 0.0;
+    let is_opaque = |id: u8| materials[id as usize].transmission == 0.0;
 
     let mut builders: Vec<PrimitiveBuilder> = (0..layout.buckets.len()).map(|_| PrimitiveBuilder::default()).collect();
     for d in 0..3 {
@@ -327,7 +328,7 @@ fn face_visible(a_id: u8, neighbor: Option<u8>, is_opaque: &impl Fn(u8) -> bool)
     }
 }
 
-/// Consumes a 2D mask of (color id or empty), emitting one maximal rectangle per contiguous
+/// Consumes a 2D mask of (material id or empty), emitting one maximal rectangle per contiguous
 /// same-id region via the standard greedy-growth sweep.
 fn greedy_rects(
     mask: &mut [Option<u8>],
@@ -370,7 +371,7 @@ fn emit_quad(
     basis: Basis,
     i: usize,
     (u0, v0, u1, v1): (usize, usize, usize, usize),
-    color_id: u8,
+    material_id: u8,
     positive: bool,
     layout: &PaletteLayout,
     builders: &mut [PrimitiveBuilder],
@@ -389,7 +390,7 @@ fn emit_quad(
     let corners = if positive { [p0, p1, p2, p3] } else { [p0, p3, p2, p1] };
     let mut normal = [0.0f32; 3];
     normal[d] = if positive { 1.0 } else { -1.0 };
-    let (bucket, uv) = layout.uv(color_id);
+    let (bucket, uv) = layout.uv(material_id);
     builders[bucket].push_quad(corners, normal, uv);
 }
 
@@ -397,8 +398,8 @@ fn emit_quad(
 mod tests {
     use super::*;
 
-    fn color(rgb: (u8, u8, u8), transmission: f64) -> ColorProps {
-        ColorProps {
+    fn material(rgb: (u8, u8, u8), transmission: f64) -> MaterialProps {
+        MaterialProps {
             rgb,
             roughness: 1.0,
             metallic: 0.0,
@@ -415,9 +416,9 @@ mod tests {
 
     #[test]
     fn single_opaque_voxel_has_six_faces() {
-        let colors = vec![color((255, 0, 0), 0.0)];
-        let layout = build_palette_layout(&colors);
-        let mesh = build_mesh([1, 1, 1], &[1], &colors, &layout);
+        let materials = vec![material((255, 0, 0), 0.0)];
+        let layout = build_palette_layout(&materials);
+        let mesh = build_mesh([1, 1, 1], &[1], &materials, &layout);
 
         assert_eq!(mesh.primitives.len(), 1);
         let prim = &mesh.primitives[0];
@@ -427,9 +428,9 @@ mod tests {
 
     #[test]
     fn adjacent_same_color_merges_sides_and_culls_shared_face() {
-        let colors = vec![color((0, 255, 0), 0.0)];
-        let layout = build_palette_layout(&colors);
-        let mesh = build_mesh([2, 1, 1], &[1, 1], &colors, &layout);
+        let materials = vec![material((0, 255, 0), 0.0)];
+        let layout = build_palette_layout(&materials);
+        let mesh = build_mesh([2, 1, 1], &[1, 1], &materials, &layout);
 
         assert_eq!(quad_count(&mesh), 6);
         // No vertex should ever land on the internal boundary plane x=1: end caps sit at x=0/x=2,
@@ -440,91 +441,91 @@ mod tests {
 
     #[test]
     fn different_opaque_colors_cull_shared_face_but_dont_merge_sides() {
-        let colors = vec![color((255, 0, 0), 0.0), color((0, 0, 255), 0.0)];
-        let layout = build_palette_layout(&colors);
-        let mesh = build_mesh([2, 1, 1], &[1, 2], &colors, &layout);
+        let materials = vec![material((255, 0, 0), 0.0), material((0, 0, 255), 0.0)];
+        let layout = build_palette_layout(&materials);
+        let mesh = build_mesh([2, 1, 1], &[1, 2], &materials, &layout);
 
         assert_eq!(quad_count(&mesh), 10);
     }
 
     #[test]
     fn transparent_same_color_still_merges_and_culls() {
-        let colors = vec![color((0, 255, 0), 0.5)];
-        let layout = build_palette_layout(&colors);
-        let mesh = build_mesh([2, 1, 1], &[1, 1], &colors, &layout);
+        let materials = vec![material((0, 255, 0), 0.5)];
+        let layout = build_palette_layout(&materials);
+        let mesh = build_mesh([2, 1, 1], &[1, 1], &materials, &layout);
 
         assert_eq!(quad_count(&mesh), 6);
     }
 
     #[test]
     fn transparent_different_colors_do_not_cull() {
-        let colors = vec![color((255, 0, 0), 0.5), color((0, 0, 255), 0.5)];
-        let layout = build_palette_layout(&colors);
-        let mesh = build_mesh([2, 1, 1], &[1, 2], &colors, &layout);
+        let materials = vec![material((255, 0, 0), 0.5), material((0, 0, 255), 0.5)];
+        let layout = build_palette_layout(&materials);
+        let mesh = build_mesh([2, 1, 1], &[1, 2], &materials, &layout);
 
         assert_eq!(quad_count(&mesh), 12);
     }
 
     #[test]
     fn distinct_ior_creates_separate_buckets() {
-        let colors = vec![
-            ColorProps {
+        let materials = vec![
+            MaterialProps {
                 ior: 1.0,
-                ..color((255, 0, 0), 0.0)
+                ..material((255, 0, 0), 0.0)
             },
-            ColorProps {
+            MaterialProps {
                 ior: 1.5,
-                ..color((0, 255, 0), 0.0)
+                ..material((0, 255, 0), 0.0)
             },
         ];
-        let layout = build_palette_layout(&colors);
+        let layout = build_palette_layout(&materials);
 
         assert_eq!(layout.buckets.len(), 2);
-        assert_eq!(layout.buckets[0].colors.len(), 1);
-        assert_eq!(layout.buckets[1].colors.len(), 1);
+        assert_eq!(layout.buckets[0].material_ids.len(), 1);
+        assert_eq!(layout.buckets[1].material_ids.len(), 1);
     }
 
     #[test]
     fn distinct_volume_creates_separate_buckets() {
-        let colors = vec![
-            ColorProps {
+        let materials = vec![
+            MaterialProps {
                 volume: Some(VolumeProps {
                     color: (0, 128, 255),
                     distance: 1.0,
                     thickness: 1.0,
                 }),
-                ..color((255, 0, 0), 0.8)
+                ..material((255, 0, 0), 0.8)
             },
-            ColorProps {
+            MaterialProps {
                 volume: Some(VolumeProps {
                     color: (255, 128, 0),
                     distance: 1.0,
                     thickness: 1.0,
                 }),
-                ..color((255, 0, 0), 0.8)
+                ..material((255, 0, 0), 0.8)
             },
         ];
-        let layout = build_palette_layout(&colors);
+        let layout = build_palette_layout(&materials);
 
         assert_eq!(layout.buckets.len(), 2);
-        assert_eq!(layout.buckets[0].colors.len(), 1);
-        assert_eq!(layout.buckets[1].colors.len(), 1);
+        assert_eq!(layout.buckets[0].material_ids.len(), 1);
+        assert_eq!(layout.buckets[1].material_ids.len(), 1);
     }
 
     #[test]
     fn shared_bucket_atlas_orders_colors_by_index() {
-        let colors = vec![color((10, 20, 30), 0.0), color((40, 50, 60), 0.0)];
-        let layout = build_palette_layout(&colors);
+        let materials = vec![material((10, 20, 30), 0.0), material((40, 50, 60), 0.0)];
+        let layout = build_palette_layout(&materials);
 
         assert_eq!(layout.buckets.len(), 1);
-        assert_eq!(layout.buckets[0].colors.len(), 2);
+        assert_eq!(layout.buckets[0].material_ids.len(), 2);
         let (b0, uv0) = layout.uv(0);
         let (b1, uv1) = layout.uv(1);
         assert_eq!(b0, b1);
         assert_eq!(uv0, [0.25, 0.5]);
         assert_eq!(uv1, [0.75, 0.5]);
 
-        let palette_data = build_palette_data(&colors, &layout);
+        let palette_data = build_palette_data(&materials, &layout);
         assert_eq!(palette_data.materials[0].base_color, vec![[10, 20, 30], [40, 50, 60]]);
     }
 

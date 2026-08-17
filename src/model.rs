@@ -1,7 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
-use crate::palette::{Color, Palette};
+use crate::palette::{Material, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
 use crate::tools::render;
@@ -32,7 +32,7 @@ impl Model {
         x + y * dx + z * dx * dy
     }
 
-    fn check_color_get_id(&self, color: Option<&Color>) -> PyResult<u8> {
+    fn check_color_get_id(&self, color: Option<&Material>) -> PyResult<u8> {
         let Some(color) = color else {
             return Ok(0);
         };
@@ -69,7 +69,7 @@ impl Model {
     }
 
     #[pyo3(signature = (color, a))]
-    pub fn put(&mut self, color: Option<&Color>, a: Int3) -> PyResult<()> {
+    pub fn put(&mut self, color: Option<&Material>, a: Int3) -> PyResult<()> {
         self.check_contains(a)?;
         let color = self.check_color_get_id(color)?;
         self.data[self.index(a)] = color;
@@ -77,7 +77,7 @@ impl Model {
     }
 
     #[pyo3(signature = (color, a, b))]
-    pub fn aabb(&mut self, color: Option<&Color>, a: Int3, b: Int3) -> PyResult<()> {
+    pub fn aabb(&mut self, color: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
         self.check_contains(a)?;
         self.check_contains(b)?;
         let color = self.check_color_get_id(color)?;

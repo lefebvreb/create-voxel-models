@@ -1,11 +1,27 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
-#[pyclass(frozen)]
+#[pyclass(from_py_object, frozen, get_all)]
+#[derive(Copy, Clone)]
 pub struct Color {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+#[pymethods]
+impl Color {
+    #[new]
+    pub fn __new__(r: u8, g: u8, b: u8) -> Self {
+        Self { r, g, b }
+    }
+}
+
+#[pyclass(frozen)]
+pub struct Material {
     pub index: u8,
     #[pyo3(get)]
-    pub rgb: (u8, u8, u8),
+    pub color: Color,
     #[pyo3(get)]
     pub roughness: f64,
     #[pyo3(get)]
@@ -23,7 +39,7 @@ pub struct Color {
 }
 
 #[pymethods]
-impl Color {
+impl Material {
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
         visit.call(&self.palette)
     }
@@ -32,7 +48,7 @@ impl Color {
 #[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Volume {
-    pub color: (u8, u8, u8),
+    pub color: Color,
     pub distance: f64,
     pub thickness: f64,
 }
@@ -41,7 +57,7 @@ pub struct Volume {
 impl Volume {
     #[new]
     #[pyo3(signature = (color, distance, *, thickness = 1.0))]
-    pub fn __new__(color: (u8, u8, u8), distance: f64, thickness: f64) -> PyResult<Self> {
+    pub fn __new__(color: Color, distance: f64, thickness: f64) -> PyResult<Self> {
         if distance <= 0.0 {
             return Err(PyValueError::new_err("distance must be greater than 0.0"));
         }
@@ -59,7 +75,7 @@ impl Volume {
 #[pyclass]
 #[derive(Default)]
 pub struct Palette {
-    pub colors: Vec<Py<Color>>,
+    pub materials: Vec<Py<Material>>,
 }
 
 #[pymethods]
@@ -70,17 +86,17 @@ impl Palette {
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (rgb, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
-    pub fn add_color(
+    #[pyo3(signature = (color, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
+    pub fn add_material(
         slf: Bound<Self>,
-        rgb: (u8, u8, u8),
+        color: Color,
         roughness: f64,
         metallic: f64,
         ior: f64,
         transmission: f64,
         emissive: f64,
         volume: Option<Volume>,
-    ) -> PyResult<Py<Color>> {
+    ) -> PyResult<Py<Material>> {
         if !(0.0..=1.0).contains(&roughness) {
             return Err(PyValueError::new_err("roughness must be between 0.0 and 1.0"));
         }
@@ -99,16 +115,16 @@ impl Palette {
             return Err(PyValueError::new_err("emissive must be greater than or equal to 0.0"));
         }
         let mut slf_brw = slf.borrow_mut();
-        let index = slf_brw.colors.len();
+        let index = slf_brw.materials.len();
         if index >= 255 {
             return Err(PyValueError::new_err(
-                "palette already contains 255 colors, which is the maximum permitted",
+                "palette already contains 255 materials, which is the maximum permitted",
             ));
         }
         let color = Py::new(
             slf.py(),
-            Color {
-                rgb,
+            Material {
+                color,
                 roughness,
                 metallic,
                 ior,
@@ -119,19 +135,19 @@ impl Palette {
                 palette: slf.clone().unbind(),
             },
         )?;
-        slf_brw.colors.push(color.clone_ref(slf.py()));
+        slf_brw.materials.push(color.clone_ref(slf.py()));
         Ok(color)
     }
 
     pub fn __len__(&self) -> usize {
-        self.colors.len()
+        self.materials.len()
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {
-        self.colors.iter().try_for_each(|color| visit.call(color))
+        self.materials.iter().try_for_each(|color| visit.call(color))
     }
 
     fn __clear__(&mut self) {
-        self.colors.clear();
+        self.materials.clear();
     }
 }
