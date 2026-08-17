@@ -84,7 +84,11 @@ pub struct PaletteData {
 pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
     let model_ref = model.borrow();
     let palette_ref = model_ref.palette.bind(model.py()).borrow();
-    let materials: Vec<MaterialProps> = palette_ref.materials.iter().map(|m| MaterialProps::from(m.get())).collect();
+    let materials: Vec<MaterialProps> = palette_ref
+        .materials
+        .iter()
+        .map(|m| MaterialProps::from(m.get()))
+        .collect();
     let layout = build_palette_layout(&materials);
     let (dx, dy, dz) = model_ref.dimensions;
     Ok(build_mesh([dx, dy, dz], &model_ref.data, &materials, &layout))
@@ -92,7 +96,11 @@ pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
 
 pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
     let palette_ref = palette.borrow();
-    let materials: Vec<MaterialProps> = palette_ref.materials.iter().map(|m| MaterialProps::from(m.get())).collect();
+    let materials: Vec<MaterialProps> = palette_ref
+        .materials
+        .iter()
+        .map(|m| MaterialProps::from(m.get()))
+        .collect();
     let layout = build_palette_layout(&materials);
     Ok(build_palette_data(&materials, &layout))
 }
@@ -189,7 +197,9 @@ fn build_palette_data(materials: &[MaterialProps], layout: &PaletteLayout) -> Pa
             }
         })
         .collect();
-    PaletteData { materials: materials_data }
+    PaletteData {
+        materials: materials_data,
+    }
 }
 
 // --- Greedy meshing ---

@@ -121,7 +121,7 @@ impl Palette {
                 "palette already contains 255 materials, which is the maximum permitted",
             ));
         }
-        let color = Py::new(
+        let material = Py::new(
             slf.py(),
             Material {
                 color,
@@ -135,8 +135,8 @@ impl Palette {
                 palette: slf.clone().unbind(),
             },
         )?;
-        slf_brw.materials.push(color.clone_ref(slf.py()));
-        Ok(color)
+        slf_brw.materials.push(material.clone_ref(slf.py()));
+        Ok(material)
     }
 
     pub fn __len__(&self) -> usize {
