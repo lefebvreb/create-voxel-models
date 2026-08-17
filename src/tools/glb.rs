@@ -1,4 +1,4 @@
-//! FULLY VIBE-CODED
+// <ai-owned/>
 
 use std::collections::{BTreeSet, HashMap};
 

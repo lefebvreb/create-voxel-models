@@ -1,5 +1,5 @@
-//! FULLY VIBE-CODED
-//!
+// <ai-owned/>
+
 //! Pure-data glTF 2.0 JSON schema (the "JSON chunk" of a .glb file). No pyo3 dependency: this
 //! module only describes the wire format, so it stays independently testable like `meshing.rs`.
 //!

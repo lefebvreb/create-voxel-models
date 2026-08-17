@@ -1,4 +1,4 @@
-//! FULLY VIBE-CODED
+// <ai-owned/>
 
 use png::{BitDepth, ColorType, Encoder};
 use pyo3::PyResult;

@@ -1,4 +1,4 @@
-//! FULLY VIBE-CODED
+// <ai-owned/>
 
 mod glb;
 mod gltf;
