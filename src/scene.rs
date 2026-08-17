@@ -147,16 +147,8 @@ impl Node {
         )
     }
 
-    #[pyo3(signature = (name, model, *, translation = None, rotation = None, scale = None, extras = None))]
-    pub fn add_model(
-        slf: Bound<Self>,
-        name: String,
-        model: Py<Model>,
-        translation: Option<Vec3>,
-        rotation: Option<Quat>,
-        scale: Option<Vec3>,
-        extras: Option<Dict>,
-    ) -> PyResult<Py<Mesh>> {
+    #[pyo3(signature = (name, model, *, extras = None))]
+    pub fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
         let mut scene = slf.get().scene.borrow_mut(slf.py());
         if scene.meshes.contains_key(&name) {
             return Err(PyValueError::new_err(
@@ -167,9 +159,6 @@ impl Node {
             slf.py(),
             Mesh {
                 name: name.clone(),
-                translation,
-                rotation,
-                scale,
                 extras,
                 parent: slf.clone().unbind(),
                 model,
@@ -188,9 +177,6 @@ impl Node {
 #[pyclass(get_all, frozen)]
 pub struct Mesh {
     pub name: String,
-    pub translation: Option<Vec3>,
-    pub rotation: Option<Quat>,
-    pub scale: Option<Vec3>,
     pub extras: Option<Dict>,
     pub parent: Py<Node>,
     pub model: Py<Model>,
