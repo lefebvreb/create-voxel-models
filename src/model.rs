@@ -67,9 +67,17 @@ impl Model {
         Ok(Some(color.code))
     }
 
-    fn set(&mut self, pos: Int3, code: Option<MaterialCode>) {
+    fn index(&self, pos: Int3) -> usize {
         let (x, y, z) = pos;
-        self.data[x + y * self.dims.x + z * self.zstride] = code;
+        x + y * self.dims.x + z * self.zstride
+    }
+
+    fn get(&self, pos: Int3) -> Option<MaterialCode> {
+        self.data[self.index(pos)]
+    }
+
+    fn set(&mut self, pos: Int3, code: Option<MaterialCode>) {
+        self.data[self.index(pos)] = code;
     }
 
     fn flip_axis(&mut self, block_len: usize, axis_count: usize) {
@@ -107,61 +115,6 @@ impl Model {
         }
     }
 
-    pub fn put(&mut self, material: Option<&Material>, a: Int3) -> PyResult<()> {
-        self.check_contains(a)?;
-        let code = self.get_material_code(material)?;
-        self.set(a, code);
-        Ok(())
-    }
-
-    pub fn aabb(&mut self, material: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
-        self.check_contains(a)?;
-        self.check_contains(b)?;
-        let code = self.get_material_code(material)?;
-        for pos in box_positions(a, b) {
-            self.set(pos, code);
-        }
-        Ok(())
-    }
-
-    #[pyo3(signature = (material, center, r1, r2 = None, r3 = None))]
-    pub fn spheroid(
-        &mut self,
-        material: Option<&Material>,
-        center: Int3,
-        r1: usize,
-        r2: Option<usize>,
-        r3: Option<usize>,
-    ) -> PyResult<()> {
-        self.check_contains(center)?;
-        if r1 == 0 || r2 == Some(0) || r3 == Some(0) {
-            return Err(PyValueError::new_err("radii must be at least 1"));
-        }
-        let radii = match (r2, r3) {
-            (None, None) => (r1, r1, r1),
-            (Some(r2), None) => (r1, r1, r2),
-            (Some(r2), Some(r3)) => (r1, r2, r3),
-            (None, Some(_)) => {
-                return Err(PyValueError::new_err("r3 requires r2 to also be specified"));
-            }
-        };
-        let code = self.get_material_code(material)?;
-        let (cx, cy, cz) = center;
-        let (rx, ry, rz) = radii;
-        let lo = (cx.saturating_sub(rx), cy.saturating_sub(ry), cz.saturating_sub(rz));
-        let hi = (
-            (cx + rx).min(self.dims.x - 1),
-            (cy + ry).min(self.dims.y - 1),
-            (cz + rz).min(self.dims.z - 1),
-        );
-        for pos in box_positions(lo, hi) {
-            if in_ellipsoid(pos, center, radii) {
-                self.set(pos, code);
-            }
-        }
-        Ok(())
-    }
-
     pub fn flip_x(slf: Bound<Self>) -> Bound<Self> {
         let mut slf_brw = slf.borrow_mut();
         let dims = slf_brw.dims;
@@ -181,6 +134,80 @@ impl Model {
         let (zstride, z) = (slf_brw.zstride, slf_brw.dims.z);
         slf_brw.flip_axis(zstride, z);
         slf
+    }
+
+    pub fn put(&mut self, material: Option<&Material>, pos: Int3) -> PyResult<()> {
+        self.check_contains(pos)?;
+        let code = self.get_material_code(material)?;
+        self.set(pos, code);
+        Ok(())
+    }
+
+    pub fn aabb(&mut self, material: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
+        self.check_contains(a)?;
+        self.check_contains(b)?;
+        let code = self.get_material_code(material)?;
+        for pos in box_positions(a, b) {
+            self.set(pos, code);
+        }
+        Ok(())
+    }
+
+    #[pyo3(signature = (material, c, r1, r2 = None, r3 = None))]
+    pub fn spheroid(
+        &mut self,
+        material: Option<&Material>,
+        c: Int3,
+        r1: usize,
+        r2: Option<usize>,
+        r3: Option<usize>,
+    ) -> PyResult<()> {
+        self.check_contains(c)?;
+        if r1 == 0 || r2 == Some(0) || r3 == Some(0) {
+            return Err(PyValueError::new_err("radii must be at least 1"));
+        }
+        let r = match (r2, r3) {
+            (None, None) => (r1, r1, r1),
+            (Some(r2), None) => (r1, r1, r2),
+            (Some(r2), Some(r3)) => (r1, r2, r3),
+            (None, Some(_)) => {
+                return Err(PyValueError::new_err("r3 requires r2 to also be specified"));
+            }
+        };
+        let code = self.get_material_code(material)?;
+        let (cx, cy, cz) = c;
+        let (rx, ry, rz) = r;
+        let lo = (cx.saturating_sub(rx), cy.saturating_sub(ry), cz.saturating_sub(rz));
+        let hi = (
+            (cx + rx).min(self.dims.x - 1),
+            (cy + ry).min(self.dims.y - 1),
+            (cz + rz).min(self.dims.z - 1),
+        );
+        for pos in box_positions(lo, hi) {
+            if in_ellipsoid(pos, c, r) {
+                self.set(pos, code);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
+        if !other.palette.is(&self.palette) {
+            return Err(PyValueError::new_err("model does not belong to this model's palette"));
+        }
+        let (ox, oy, oz) = offset;
+        let extent = (other.dims.x - 1, other.dims.y - 1, other.dims.z - 1);
+        for local in box_positions((0, 0, 0), extent) {
+            let Some(code) = other.get(local) else {
+                continue;
+            };
+            let (lx, ly, lz) = local;
+            let pos = (ox + lx, oy + ly, oz + lz);
+            if self.dims.contains(pos) {
+                self.set(pos, Some(code));
+            }
+        }
+        Ok(())
     }
 
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
