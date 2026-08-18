@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use pyo3::{Bound, PyResult};
 
-use crate::model::Model;
+use crate::model::{Dimensions, Model};
 use crate::palette::{Material, Palette, Volume};
 
 // Voxel grid axes map directly onto glTF's X/Y/Z with no remap: x -> X, y -> Y (up), z -> Z.
@@ -90,8 +90,8 @@ pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
         .map(|m| MaterialProps::from(m.get()))
         .collect();
     let layout = build_palette_layout(&materials);
-    let (dx, dy, dz) = model_ref.dimensions;
-    Ok(build_mesh([dx, dy, dz], &model_ref.data, &materials, &layout))
+    let Dimensions { x, y, z } = model_ref.dimensions;
+    Ok(build_mesh([x, y, z], &model_ref.data, &materials, &layout))
 }
 
 pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {

@@ -16,7 +16,7 @@ mod voxels {
     #[pymodule_export]
     use crate::math::{Quat, Vec3};
     #[pymodule_export]
-    use crate::model::Model;
+    use crate::model::{Dimensions, Model};
     #[pymodule_export]
     use crate::palette::{Color, Material, Palette, Volume};
     #[pymodule_export]

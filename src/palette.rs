@@ -19,7 +19,7 @@ impl Color {
 
 #[pyclass(frozen)]
 pub struct Material {
-    pub index: u8,
+    pub code: u8,
     #[pyo3(get)]
     pub color: Color,
     #[pyo3(get)]
@@ -124,6 +124,7 @@ impl Palette {
         let material = Py::new(
             slf.py(),
             Material {
+                code: u8::try_from(index + 1).expect("color code should fit in a byte"),
                 color,
                 roughness,
                 metallic,
@@ -131,7 +132,6 @@ impl Palette {
                 transmission,
                 emissive,
                 volume,
-                index: u8::try_from(index).expect("color index should fit in a byte"),
                 palette: slf.clone().unbind(),
             },
         )?;
