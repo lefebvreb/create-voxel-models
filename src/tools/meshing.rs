@@ -90,7 +90,7 @@ pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
         .map(|m| MaterialProps::from(m.get()))
         .collect();
     let layout = build_palette_layout(&materials);
-    let Dimensions { x, y, z } = model_ref.dimensions;
+    let Dimensions { x, y, z } = model_ref.dims;
     Ok(build_mesh([x, y, z], &model_ref.data, &materials, &layout))
 }
 

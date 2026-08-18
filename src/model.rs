@@ -40,7 +40,7 @@ impl Dimensions {
 #[pyclass]
 pub struct Model {
     #[pyo3(get)]
-    pub dimensions: Dimensions,
+    pub dims: Dimensions,
     pub zstride: usize,
     pub data: Box<[Option<MaterialCode>]>,
     #[pyo3(get)]
@@ -49,7 +49,7 @@ pub struct Model {
 
 impl Model {
     fn check_contains(&self, a: Int3) -> PyResult<()> {
-        if !self.dimensions.contains(a) {
+        if !self.dims.contains(a) {
             return Err(PyValueError::new_err(format!(
                 "coordinates ({a:?}) are out of bounds of this model"
             )));
@@ -59,7 +59,7 @@ impl Model {
 
     fn index(&self, pos: Int3) -> usize {
         let (x, y, z) = pos;
-        x + y * self.dimensions.x + z * self.zstride
+        x + y * self.dims.x + z * self.zstride
     }
 
     fn get_material_code(&self, color: Option<&Material>) -> PyResult<Option<MaterialCode>> {
@@ -76,18 +76,18 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    pub fn __new__(dimensions: Dimensions, palette: Py<Palette>) -> Self {
+    pub fn __new__(dims: Dimensions, palette: Py<Palette>) -> Self {
         Self {
-            dimensions,
-            zstride: dimensions.x * dimensions.y,
-            data: vec![None; dimensions.x * dimensions.y * dimensions.z].into_boxed_slice(),
+            dims,
+            zstride: dims.x * dims.y,
+            data: vec![None; dims.x * dims.y * dims.z].into_boxed_slice(),
             palette,
         }
     }
 
     pub fn copy(&self, py: Python) -> Self {
         Self {
-            dimensions: self.dimensions,
+            dims: self.dims,
             zstride: self.zstride,
             data: self.data.clone(),
             palette: self.palette.clone_ref(py),
@@ -101,21 +101,20 @@ impl Model {
         Ok(())
     }
 
-    // #[pyo3(signature = (color, a, b))]
-    // pub fn aabb(&mut self, color: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
-    //     self.check_contains(a)?;
-    //     self.check_contains(b)?;
-    //     let color = self.check_color_get_id(color)?;
-    //     let ((ax, ay, az), (bx, by, bz)) = (a, b);
-    //     for z in az.min(bz)..az.max(bz) {
-    //         for y in ay.min(by)..ay.max(by) {
-    //             for x in ax.min(bx)..ax.max(bx) {
-    //                 self.data[self.index((x, y, z))] = color;
-    //             }
-    //         }
-    //     }
-    //     Ok(())
-    // }
+    pub fn aabb(&mut self, material: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
+        self.check_contains(a)?;
+        self.check_contains(b)?;
+        let code = self.get_material_code(material)?;
+        let ((ax, ay, az), (bx, by, bz)) = (a, b);
+        for z in az.min(bz)..az.max(bz) {
+            for y in ay.min(by)..ay.max(by) {
+                for x in ax.min(bx)..ax.max(bx) {
+                    self.data[self.index((x, y, z))] = code;
+                }
+            }
+        }
+        Ok(())
+    }
 
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
         let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
