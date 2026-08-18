@@ -1,11 +1,11 @@
-from voxels import Color, Interpolation, Model, Palette, Quat, Scene, Vec3, Volume
+from voxels import Color, Dimensions, Interpolation, Model, Palette, Quat, Scene, Vec3, Volume
 
 palette = Palette()
-red = palette.add_material(Color(255, 0, 0), emissive=2.0)
+red = palette.add_material(Color(255, 0, 0), emissive=10.0)
 glass = palette.add_material(Color(0, 128, 255), ior=1.0, transmission=0.95, roughness=0.05, volume=Volume(Color(0, 128, 255), 2.0))
 gold = palette.add_material(Color(239, 191, 4), roughness=0.0, metallic=1.0)
 
-model = Model((3, 1, 1), palette)
+model = Model(Dimensions(3, 1, 1), palette)
 model.put(red, (0, 0, 0))
 model.put(glass, (1, 0, 0))
 model.put(gold, (2, 0, 0))

@@ -1,7 +1,7 @@
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
-use crate::palette::{Material, Palette};
+use crate::palette::{Material, MaterialCode, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
 use crate::tools::render;
@@ -31,8 +31,8 @@ impl Dimensions {
         Ok(Self { x, y, z })
     }
 
-    fn contains(&self, position: Int3) -> bool {
-        let (x, y, z) = position;
+    fn contains(&self, a: Int3) -> bool {
+        let (x, y, z) = a;
         x < self.x && y < self.y && z < self.z
     }
 }
@@ -41,35 +41,35 @@ impl Dimensions {
 pub struct Model {
     #[pyo3(get)]
     pub dimensions: Dimensions,
-    pub data: Box<[u8]>,
     pub zstride: usize,
+    pub data: Box<[Option<MaterialCode>]>,
     #[pyo3(get)]
     pub palette: Py<Palette>,
 }
 
 impl Model {
-    // fn check_contains(&self, a: Int3) -> PyResult<()> {
-    //     if !self.dimensions.contains(a) {
-    //         return Err(PyValueError::new_err(format!(
-    //             "coordinates ({ax}, {ay}, {az}) are out of bounds of this model"
-    //         )));
-    //     }
-    //     Ok(())
-    // }
+    fn check_contains(&self, a: Int3) -> PyResult<()> {
+        if !self.dimensions.contains(a) {
+            return Err(PyValueError::new_err(format!(
+                "coordinates ({a:?}) are out of bounds of this model"
+            )));
+        }
+        Ok(())
+    }
 
     fn index(&self, pos: Int3) -> usize {
         let (x, y, z) = pos;
         x + y * self.dimensions.x + z * self.zstride
     }
 
-    fn get_color_code(&self, color: Option<&Material>) -> PyResult<u8> {
+    fn get_material_code(&self, color: Option<&Material>) -> PyResult<Option<MaterialCode>> {
         let Some(color) = color else {
-            return Ok(0);
+            return Ok(None);
         };
         if !color.palette.is(&self.palette) {
             return Err(PyValueError::new_err("color does not belong to this model's palette"));
         }
-        Ok(color.code)
+        Ok(Some(color.code))
     }
 }
 
@@ -79,8 +79,8 @@ impl Model {
     pub fn __new__(dimensions: Dimensions, palette: Py<Palette>) -> Self {
         Self {
             dimensions,
-            data: vec![0; dimensions.x * dimensions.y * dimensions.z].into_boxed_slice(),
             zstride: dimensions.x * dimensions.y,
+            data: vec![None; dimensions.x * dimensions.y * dimensions.z].into_boxed_slice(),
             palette,
         }
     }
@@ -88,19 +88,18 @@ impl Model {
     pub fn copy(&self, py: Python) -> Self {
         Self {
             dimensions: self.dimensions,
-            data: self.data.clone(),
             zstride: self.zstride,
+            data: self.data.clone(),
             palette: self.palette.clone_ref(py),
         }
     }
 
-    // #[pyo3(signature = (color, a))]
-    // pub fn put(&mut self, color: Option<&Material>, a: Int3) -> PyResult<()> {
-    //     self.check_contains(a)?;
-    //     let color = self.check_color_get_id(color)?;
-    //     self.data[self.index(a)] = color;
-    //     Ok(())
-    // }
+    pub fn put(&mut self, material: Option<&Material>, a: Int3) -> PyResult<()> {
+        self.check_contains(a)?;
+        let code = self.get_material_code(material)?;
+        self.data[self.index(a)] = code;
+        Ok(())
+    }
 
     // #[pyo3(signature = (color, a, b))]
     // pub fn aabb(&mut self, color: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
@@ -118,7 +117,6 @@ impl Model {
     //     Ok(())
     // }
 
-    #[pyo3(signature = (angles))]
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
         let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;

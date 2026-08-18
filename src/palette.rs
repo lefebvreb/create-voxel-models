@@ -1,8 +1,10 @@
+use std::num::NonZeroU8;
+
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
 #[pyclass(from_py_object, frozen, get_all)]
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Color {
     pub r: u8,
     pub g: u8,
@@ -17,9 +19,23 @@ impl Color {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct MaterialCode(NonZeroU8);
+
+impl MaterialCode {
+    pub fn new(index: usize) -> Self {
+        let code = u8::try_from(index + 1).expect("index should be 254 at most");
+        Self(NonZeroU8::new(code).unwrap())
+    }
+
+    pub fn index(self) -> usize {
+        usize::from(self.0.get()) - 1
+    }
+}
+
 #[pyclass(frozen)]
 pub struct Material {
-    pub code: u8,
+    pub code: MaterialCode,
     #[pyo3(get)]
     pub color: Color,
     #[pyo3(get)]
@@ -116,7 +132,7 @@ impl Palette {
         }
         let mut slf_brw = slf.borrow_mut();
         let index = slf_brw.materials.len();
-        if index >= 255 {
+        if index == 255 {
             return Err(PyValueError::new_err(
                 "palette already contains 255 materials, which is the maximum permitted",
             ));
@@ -124,7 +140,7 @@ impl Palette {
         let material = Py::new(
             slf.py(),
             Material {
-                code: u8::try_from(index + 1).expect("color code should fit in a byte"),
+                code: MaterialCode::new(index),
                 color,
                 roughness,
                 metallic,

@@ -279,9 +279,9 @@ fn build_material(
         extensions.volume = Some(gltf::KhrMaterialsVolume {
             thickness_factor: volume.thickness,
             attenuation_color: [
-                volume.color.0 as f32 / 255.0,
-                volume.color.1 as f32 / 255.0,
-                volume.color.2 as f32 / 255.0,
+                volume.color.r as f32 / 255.0,
+                volume.color.g as f32 / 255.0,
+                volume.color.b as f32 / 255.0,
             ],
             attenuation_distance: volume.distance,
         });
