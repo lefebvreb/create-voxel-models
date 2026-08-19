@@ -111,18 +111,17 @@ impl Model {
         self.data[self.index(pos)] = code;
     }
 
-    fn fill_ellipsoid(&mut self, material: Option<&Material>, c: Int3, r: Int3) -> PyResult<()> {
-        self.check_contains(c)?;
+    fn fill_ellipsoid(&mut self, material: Option<&Material>, center: Int3, radii: Int3) -> PyResult<()> {
+        self.check_contains(center)?;
         let code = self.get_material_code(material)?;
-        let (rx, ry, rz) = r;
+        let (rx, ry, rz) = radii;
         if rx == 0 || ry == 0 || rz == 0 {
             return Err(PyValueError::new_err("radii must be at least 1"));
         }
-        let center = int3::into_vec3(c);
-        let lo = int3::saturating_sub(c, r);
-        let hi = int3::min(int3::add(c, r), self.dims.last_index());
+        let lo = int3::saturating_sub(center, radii);
+        let hi = int3::min(int3::add(center, radii), self.dims.last_index());
         for pos in box_positions(lo, hi) {
-            let delta = int3::into_vec3(pos).__sub__(center);
+            let delta = int3::into_vec3(pos).__sub__(int3::into_vec3(center));
             let nx = delta.x() / rx as f64;
             let ny = delta.y() / ry as f64;
             let nz = delta.z() / rz as f64;
