@@ -37,6 +37,10 @@ impl Dimensions {
         let (x, y, z) = a;
         x < self.x && y < self.y && z < self.z
     }
+
+    fn as_vec(&self) -> Vec3 {
+        Vec3::__new__(self.x as f64, self.y as f64, self.z as f64)
+    }
 }
 
 #[pyclass(from_py_object, frozen)]
@@ -85,11 +89,10 @@ impl Model {
     }
 
     pub fn pivot_offset(&self) -> Vec3 {
-        let (dx, dy, dz) = (self.dims.x as f64, self.dims.y as f64, self.dims.z as f64);
         match self.pivot {
             Either::Left(Pivot::Corner) => Vec3::ZERO,
-            Either::Left(Pivot::Center) => Vec3::__new__(dx / 2.0, dy / 2.0, dz / 2.0),
-            Either::Left(Pivot::BottomCenter) => Vec3::__new__(dx / 2.0, 0.0, dz / 2.0),
+            Either::Left(Pivot::Center) => self.dims.as_vec().__mul__(0.5),
+            Either::Left(Pivot::BottomCenter) => Vec3::__new__(self.dims.x as f64 * 0.5, 0.0, self.dims.z as f64 * 0.5),
             Either::Right(v) => v,
         }
     }
