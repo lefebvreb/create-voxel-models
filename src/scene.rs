@@ -38,7 +38,7 @@ impl Scene {
 #[pymethods]
 impl Scene {
     #[new]
-    pub fn __new__() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 

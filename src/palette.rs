@@ -14,7 +14,7 @@ pub struct Color {
 #[pymethods]
 impl Color {
     #[new]
-    pub fn __new__(r: u8, g: u8, b: u8) -> Self {
+    pub fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
     }
 }
@@ -73,7 +73,7 @@ pub struct Volume {
 impl Volume {
     #[new]
     #[pyo3(signature = (color, distance, *, thickness = 1.0))]
-    pub fn __new__(color: Color, distance: f64, thickness: f64) -> PyResult<Self> {
+    pub fn new(color: Color, distance: f64, thickness: f64) -> PyResult<Self> {
         if distance <= 0.0 {
             return Err(PyValueError::new_err("distance must be greater than 0.0"));
         }
@@ -97,7 +97,7 @@ pub struct Palette {
 #[pymethods]
 impl Palette {
     #[new]
-    pub fn __new__() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 

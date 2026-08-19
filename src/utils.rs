@@ -26,12 +26,12 @@ pub mod int3 {
         (ax.max(bx), ay.max(by), az.max(bz))
     }
 
-    pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax - bx, ay - by, az - bz)
-    }
-
     pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
         (ax + bx, ay + by, az + bz)
+    }
+
+    pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax - bx, ay - by, az - bz)
     }
 
     pub fn saturating_sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
@@ -39,7 +39,7 @@ pub mod int3 {
     }
 
     pub fn into_vec3((x, y, z): Int3) -> Vec3 {
-        Vec3::__new__(x as f64, y as f64, z as f64)
+        Vec3::new(x as f64, y as f64, z as f64)
     }
 }
 

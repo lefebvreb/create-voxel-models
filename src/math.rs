@@ -32,7 +32,7 @@ impl Vec3 {
     }
 
     #[new]
-    pub fn __new__(x: f64, y: f64, z: f64) -> Self {
+    pub fn new(x: f64, y: f64, z: f64) -> Self {
         Self {
             inner: glam::DVec3::new(x, y, z),
         }

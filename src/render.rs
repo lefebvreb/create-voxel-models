@@ -14,7 +14,7 @@ pub struct CameraAngle {
 impl CameraAngle {
     #[new]
     #[pyo3(signature = (yaw, pitch, *, zoom = None))]
-    fn __new__(yaw: f64, pitch: f64, zoom: Option<f64>) -> Self {
+    fn new(yaw: f64, pitch: f64, zoom: Option<f64>) -> Self {
         Self { yaw, pitch, zoom }
     }
 }

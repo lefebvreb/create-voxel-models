@@ -20,7 +20,7 @@ pub struct Dimensions {
 #[pymethods]
 impl Dimensions {
     #[new]
-    fn __new__(x: usize, y: usize, z: usize) -> PyResult<Self> {
+    fn new(x: usize, y: usize, z: usize) -> PyResult<Self> {
         if !(1..=256).contains(&x) {
             return Err(PyValueError::new_err("x dimension must be between 1 and 256 inclusive"));
         }
@@ -102,7 +102,7 @@ impl Model {
         match self.pivot {
             Either::Left(Pivot::Corner) => Vec3::ZERO,
             Either::Left(Pivot::Center) => self.dims.as_vec().__mul__(0.5),
-            Either::Left(Pivot::BottomCenter) => Vec3::__new__(self.dims.x as f64 * 0.5, 0.0, self.dims.z as f64 * 0.5),
+            Either::Left(Pivot::BottomCenter) => Vec3::new(self.dims.x as f64 * 0.5, 0.0, self.dims.z as f64 * 0.5),
             Either::Right(v) => v,
         }
     }
@@ -153,7 +153,7 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    pub fn __new__(dims: Dimensions, palette: Py<Palette>, pivot: Either<Pivot, Vec3>) -> Self {
+    pub fn new(dims: Dimensions, palette: Py<Palette>, pivot: Either<Pivot, Vec3>) -> Self {
         Self {
             dims,
             zstride: dims.x * dims.y,
@@ -179,7 +179,7 @@ impl Model {
         let lo = int3::min(p1, p2);
         let hi = int3::max(p1, p2);
         let dims = Dimensions::from_extent(int3::add(int3::sub(hi, lo), int3::ONE));
-        let mut clipped = Self::__new__(dims, self.palette.clone_ref(py), self.pivot);
+        let mut clipped = Self::new(dims, self.palette.clone_ref(py), self.pivot);
         for pos in box_positions(lo, hi) {
             clipped.set(int3::sub(pos, lo), self.get(pos));
         }
