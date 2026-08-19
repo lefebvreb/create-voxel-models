@@ -105,6 +105,30 @@ impl Model {
         self.data[self.index(pos)] = code;
     }
 
+    fn fill_ellipsoid(&mut self, code: Option<MaterialCode>, c: Int3, r: Int3) -> PyResult<()> {
+        self.check_contains(c)?;
+        let (rx, ry, rz) = r;
+        if rx == 0 || ry == 0 || rz == 0 {
+            return Err(PyValueError::new_err("radii must be at least 1"));
+        }
+        let (cx, cy, cz) = c;
+        let lo = (cx.saturating_sub(rx), cy.saturating_sub(ry), cz.saturating_sub(rz));
+        let hi = (
+            (cx + rx).min(self.dims.x - 1),
+            (cy + ry).min(self.dims.y - 1),
+            (cz + rz).min(self.dims.z - 1),
+        );
+        for (x, y, z) in box_positions(lo, hi) {
+            let nx = (x as f64 - cx as f64) / rx as f64;
+            let ny = (y as f64 - cy as f64) / ry as f64;
+            let nz = (z as f64 - cz as f64) / rz as f64;
+            if nx * nx + ny * ny + nz * nz <= 1.0 {
+                self.set((x, y, z), code);
+            }
+        }
+        Ok(())
+    }
+
     fn flip_axis(&mut self, block_len: usize, axis_count: usize) {
         let chunk_len = block_len * axis_count;
         for chunk_start in (0..self.data.len()).step_by(chunk_len) {
@@ -180,42 +204,19 @@ impl Model {
         Ok(())
     }
 
-    #[pyo3(signature = (material, c, r1, r2 = None, r3 = None))]
-    pub fn spheroid(
-        &mut self,
-        material: Option<&Material>,
-        c: Int3,
-        r1: usize,
-        r2: Option<usize>,
-        r3: Option<usize>,
-    ) -> PyResult<()> {
-        self.check_contains(c)?;
-        if r1 == 0 || r2 == Some(0) || r3 == Some(0) {
-            return Err(PyValueError::new_err("radii must be at least 1"));
-        }
-        let r = match (r2, r3) {
-            (None, None) => (r1, r1, r1),
-            (Some(r2), None) => (r1, r1, r2),
-            (Some(r2), Some(r3)) => (r1, r2, r3),
-            (None, Some(_)) => {
-                return Err(PyValueError::new_err("r3 requires r2 to also be specified"));
-            }
-        };
+    pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
         let code = self.get_material_code(material)?;
-        let (cx, cy, cz) = c;
-        let (rx, ry, rz) = r;
-        let lo = (cx.saturating_sub(rx), cy.saturating_sub(ry), cz.saturating_sub(rz));
-        let hi = (
-            (cx + rx).min(self.dims.x - 1),
-            (cy + ry).min(self.dims.y - 1),
-            (cz + rz).min(self.dims.z - 1),
-        );
-        for pos in box_positions(lo, hi) {
-            if in_ellipsoid(pos, c, r) {
-                self.set(pos, code);
-            }
-        }
-        Ok(())
+        self.fill_ellipsoid(code, c, (r, r, r))
+    }
+
+    pub fn spheroid(&mut self, material: Option<&Material>, c: Int3, r_eq: usize, r_polar: usize) -> PyResult<()> {
+        let code = self.get_material_code(material)?;
+        self.fill_ellipsoid(code, c, (r_eq, r_polar, r_eq))
+    }
+
+    pub fn ellipsoid(&mut self, material: Option<&Material>, c: Int3, rx: usize, ry: usize, rz: usize) -> PyResult<()> {
+        let code = self.get_material_code(material)?;
+        self.fill_ellipsoid(code, c, (rx, ry, rz))
     }
 
     pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
@@ -252,14 +253,4 @@ fn box_positions(a: Int3, b: Int3) -> impl Iterator<Item = Int3> {
     let (y0, y1) = (ay.min(by), ay.max(by));
     let (z0, z1) = (az.min(bz), az.max(bz));
     (z0..=z1).flat_map(move |z| (y0..=y1).flat_map(move |y| (x0..=x1).map(move |x| (x, y, z))))
-}
-
-fn in_ellipsoid(pos: Int3, center: Int3, radii: Int3) -> bool {
-    let (x, y, z) = pos;
-    let (cx, cy, cz) = center;
-    let (rx, ry, rz) = radii;
-    let nx = (x as f64 - cx as f64) / rx as f64;
-    let ny = (y as f64 - cy as f64) / ry as f64;
-    let nz = (z as f64 - cz as f64) / rz as f64;
-    nx * nx + ny * ny + nz * nz <= 1.0
 }
