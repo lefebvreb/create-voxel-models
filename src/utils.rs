@@ -12,6 +12,7 @@ pub mod int3 {
     use crate::utils::Int3;
 
     pub const ZERO: Int3 = (0, 0, 0);
+    pub const ONE: Int3 = (1, 1, 1);
 
     pub fn contains_zero((x, y, z): Int3) -> bool {
         x == 0 || y == 0 || z == 0
@@ -23,6 +24,10 @@ pub mod int3 {
 
     pub fn max((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
         (ax.max(bx), ay.max(by), az.max(bz))
+    }
+
+    pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax - bx, ay - by, az - bz)
     }
 
     pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {

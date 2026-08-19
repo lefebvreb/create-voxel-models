@@ -47,6 +47,10 @@ impl Dimensions {
     fn last_index(&self) -> Int3 {
         (self.x - 1, self.y - 1, self.z - 1)
     }
+
+    fn from_extent((x, y, z): Int3) -> Self {
+        Self { x, y, z }
+    }
 }
 
 #[pyclass(from_py_object, frozen)]
@@ -169,29 +173,29 @@ impl Model {
         }
     }
 
-    pub fn clip(&self, p1: Int3, p2: Int3, py: Python) -> Self {
-        todo!()
+    pub fn clip(&self, p1: Int3, p2: Int3, py: Python) -> PyResult<Self> {
+        self.check_contains(p1)?;
+        self.check_contains(p2)?;
+        let lo = int3::min(p1, p2);
+        let hi = int3::max(p1, p2);
+        let dims = Dimensions::from_extent(int3::add(int3::sub(hi, lo), int3::ONE));
+        let mut clipped = Self::__new__(dims, self.palette.clone_ref(py), self.pivot);
+        for pos in box_positions(lo, hi) {
+            clipped.set(int3::sub(pos, lo), self.get(pos));
+        }
+        Ok(clipped)
     }
 
-    pub fn flip_x(slf: Bound<Self>) -> Bound<Self> {
-        let mut slf_brw = slf.borrow_mut();
-        let dims = slf_brw.dims;
-        slf_brw.flip_axis(1, dims.x);
-        slf
+    pub fn flip_x(&mut self) {
+        self.flip_axis(1, self.dims.x);
     }
 
-    pub fn flip_y(slf: Bound<Self>) -> Bound<Self> {
-        let mut slf_brw = slf.borrow_mut();
-        let dims = slf_brw.dims;
-        slf_brw.flip_axis(dims.x, dims.y);
-        slf
+    pub fn flip_y(&mut self) {
+        self.flip_axis(self.dims.x, self.dims.y);
     }
 
-    pub fn flip_z(slf: Bound<Self>) -> Bound<Self> {
-        let mut slf_brw = slf.borrow_mut();
-        let (zstride, z) = (slf_brw.zstride, slf_brw.dims.z);
-        slf_brw.flip_axis(zstride, z);
-        slf
+    pub fn flip_z(&mut self) {
+        self.flip_axis(self.zstride, self.dims.z);
     }
 
     pub fn put(&mut self, material: Option<&Material>, p: Int3) -> PyResult<()> {
