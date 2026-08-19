@@ -84,6 +84,16 @@ impl Model {
         x + y * self.dims.x + z * self.zstride
     }
 
+    pub fn pivot_offset(&self) -> Vec3 {
+        let (dx, dy, dz) = (self.dims.x as f64, self.dims.y as f64, self.dims.z as f64);
+        match self.pivot {
+            Either::Left(Pivot::Corner) => Vec3::ZERO,
+            Either::Left(Pivot::Center) => Vec3::__new__(dx / 2.0, dy / 2.0, dz / 2.0),
+            Either::Left(Pivot::BottomCenter) => Vec3::__new__(dx / 2.0, 0.0, dz / 2.0),
+            Either::Right(v) => v,
+        }
+    }
+
     fn get(&self, pos: Int3) -> Option<MaterialCode> {
         self.data[self.index(pos)]
     }

@@ -8,6 +8,8 @@ use crate::model::{Dimensions, Model};
 use crate::palette::{Color, Material, MaterialCode, Palette, Volume};
 
 // Voxel grid axes map directly onto glTF's X/Y/Z with no remap: x -> X, y -> Y (up), z -> Z.
+// Positions are grid coordinates shifted by the model's pivot, so they aren't necessarily
+// non-negative or bounded by `dims` - see `Model::pivot_offset`.
 
 /// Plain snapshot of `Volume`, decoupled from pyo3 for the same reason as `MaterialProps` below.
 #[derive(Clone, Copy)]
@@ -91,7 +93,15 @@ pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
         .collect();
     let layout = build_palette_layout(&materials);
     let Dimensions { x, y, z } = model_ref.dims;
-    Ok(build_mesh([x, y, z], &model_ref.data, &materials, &layout))
+    let pivot = model_ref.pivot_offset();
+    let pivot_offset = [pivot.inner.x as f32, pivot.inner.y as f32, pivot.inner.z as f32];
+    Ok(build_mesh(
+        [x, y, z],
+        &model_ref.data,
+        &materials,
+        &layout,
+        pivot_offset,
+    ))
 }
 
 pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
@@ -250,6 +260,7 @@ fn build_mesh(
     data: &[Option<MaterialCode>],
     materials: &[MaterialProps],
     layout: &PaletteLayout,
+    pivot_offset: [f32; 3],
 ) -> MeshData {
     let [dx, dy, _dz] = dims;
     let voxel_at = |p: [usize; 3]| -> Option<MaterialCode> { data[p[0] + p[1] * dx + p[2] * dx * dy] };
@@ -269,7 +280,14 @@ fn build_mesh(
         .into_iter()
         .enumerate()
         .filter(|(_, b)| !b.indices.is_empty())
-        .map(|(i, b)| b.into_primitive(i))
+        .map(|(i, mut b)| {
+            for p in &mut b.positions {
+                p[0] -= pivot_offset[0];
+                p[1] -= pivot_offset[1];
+                p[2] -= pivot_offset[2];
+            }
+            b.into_primitive(i)
+        })
         .collect();
     MeshData { primitives }
 }
@@ -439,7 +457,7 @@ mod tests {
     fn single_opaque_voxel_has_six_faces() {
         let materials = vec![material(rgb(255, 0, 0), 0.0)];
         let layout = build_palette_layout(&materials);
-        let mesh = build_mesh([1, 1, 1], &[code(0)], &materials, &layout);
+        let mesh = build_mesh([1, 1, 1], &[code(0)], &materials, &layout, [0.0, 0.0, 0.0]);
 
         assert_eq!(mesh.primitives.len(), 1);
         let prim = &mesh.primitives[0];
@@ -448,10 +466,34 @@ mod tests {
     }
 
     #[test]
+    fn pivot_offset_shifts_every_vertex() {
+        let materials = vec![material(rgb(255, 0, 0), 0.0)];
+        let layout = build_palette_layout(&materials);
+
+        // What `Pivot::Center` resolves to for a single-voxel model: every vertex should land
+        // in [-0.5, 0.5] on every axis instead of the unshifted [0.0, 1.0].
+        let mesh = build_mesh([1, 1, 1], &[code(0)], &materials, &layout, [0.5, 0.5, 0.5]);
+        let prim = &mesh.primitives[0];
+        assert!(
+            prim.positions
+                .iter()
+                .all(|p| p.iter().all(|&c| (-0.5..=0.5).contains(&c)))
+        );
+
+        // What `Pivot::BottomCenter` resolves to: x/z are centered but y is left unshifted, so
+        // the model still sits flush with y=0.
+        let mesh = build_mesh([1, 1, 1], &[code(0)], &materials, &layout, [0.5, 0.0, 0.5]);
+        let prim = &mesh.primitives[0];
+        assert!(prim.positions.iter().all(|p| (-0.5..=0.5).contains(&p[0])));
+        assert!(prim.positions.iter().all(|p| (0.0..=1.0).contains(&p[1])));
+        assert!(prim.positions.iter().all(|p| (-0.5..=0.5).contains(&p[2])));
+    }
+
+    #[test]
     fn adjacent_same_color_merges_sides_and_culls_shared_face() {
         let materials = vec![material(rgb(0, 255, 0), 0.0)];
         let layout = build_palette_layout(&materials);
-        let mesh = build_mesh([2, 1, 1], &[code(0), code(0)], &materials, &layout);
+        let mesh = build_mesh([2, 1, 1], &[code(0), code(0)], &materials, &layout, [0.0, 0.0, 0.0]);
 
         assert_eq!(quad_count(&mesh), 6);
         // No vertex should ever land on the internal boundary plane x=1: end caps sit at x=0/x=2,
@@ -464,7 +506,7 @@ mod tests {
     fn different_opaque_colors_cull_shared_face_but_dont_merge_sides() {
         let materials = vec![material(rgb(255, 0, 0), 0.0), material(rgb(0, 0, 255), 0.0)];
         let layout = build_palette_layout(&materials);
-        let mesh = build_mesh([2, 1, 1], &[code(0), code(1)], &materials, &layout);
+        let mesh = build_mesh([2, 1, 1], &[code(0), code(1)], &materials, &layout, [0.0, 0.0, 0.0]);
 
         assert_eq!(quad_count(&mesh), 10);
     }
@@ -473,7 +515,7 @@ mod tests {
     fn transparent_same_color_still_merges_and_culls() {
         let materials = vec![material(rgb(0, 255, 0), 0.5)];
         let layout = build_palette_layout(&materials);
-        let mesh = build_mesh([2, 1, 1], &[code(0), code(0)], &materials, &layout);
+        let mesh = build_mesh([2, 1, 1], &[code(0), code(0)], &materials, &layout, [0.0, 0.0, 0.0]);
 
         assert_eq!(quad_count(&mesh), 6);
     }
@@ -482,7 +524,7 @@ mod tests {
     fn transparent_different_colors_do_not_cull() {
         let materials = vec![material(rgb(255, 0, 0), 0.5), material(rgb(0, 0, 255), 0.5)];
         let layout = build_palette_layout(&materials);
-        let mesh = build_mesh([2, 1, 1], &[code(0), code(1)], &materials, &layout);
+        let mesh = build_mesh([2, 1, 1], &[code(0), code(1)], &materials, &layout, [0.0, 0.0, 0.0]);
 
         assert_eq!(quad_count(&mesh), 12);
     }
