@@ -86,7 +86,7 @@ class Mesh:
 
 @final
 class Model:
-    def __new__(cls, /, dims: Dimensions, palette: Palette) -> Model: ...
+    def __new__(cls, /, dims: Dimensions, palette: Palette, pivot: Pivot |Vec3) -> Model: ...
     def aabb(self, /, material: Material |None, a: tuple[int, int, int], b: tuple[int, int, int]) -> None: ...
     def copy(self, /) -> Model: ...
     @property
@@ -97,6 +97,8 @@ class Model:
     def include(self, /, other: Model, offset: tuple[int, int, int]) -> None: ...
     @property
     def palette(self, /) -> Palette: ...
+    @property
+    def pivot(self, /) -> Pivot |Vec3: ...
     def put(self, /, material: Material |None, pos: tuple[int, int, int]) -> None: ...
     def render(self, /, angles: Sequence[CameraAngle]) -> RenderOutput: ...
     def spheroid(self, /, material: Material |None, c: tuple[int, int, int], r1: int, r2: int |None = None, r3: int |None = None) -> None: ...
@@ -125,6 +127,14 @@ class Palette:
     def __len__(self, /) -> int: ...
     def __new__(cls, /) -> Palette: ...
     def add_material(self, /, color: Color, *, roughness: float = 1.0, metallic: float = 0.0, ior: float = 1.5, transmission: float = 0.0, emissive: float = 0.0, volume: Volume |None = None) -> Material: ...
+
+@final
+class Pivot:
+    BottomCenter: Final[Pivot]
+    Center: Final[Pivot]
+    Corner: Final[Pivot]
+    def __int__(self, /) -> int: ...
+    def __repr__(self, /) -> str: ...
 
 @final
 class Quat:
@@ -190,22 +200,29 @@ class Vec3:
     """
     def __add__(self, other: object, /) -> Vec3:
         """
-        Component-wise addition, `other` must be a `Vec3`.
+        Component-wise addition of `self` and `other`.
+        
+        `other` must be a `Vec3`.
         """
     def __mul__(self, other: object, /) -> Vec3:
         """
-        Component-wise multiplication when `other` is a `Vec3`.
-        Otherwise just scales `self` by `other`, which is then required to be a `float`.
+        Scaling of `self` by the scalar factor `other`.
+        
+        `other` must be a `float`.
         """
     def __neg__(self, /) -> Vec3: ...
     def __new__(cls, /, x: float, y: float, z: float) -> Vec3: ...
     def __sub__(self, other: object, /) -> Vec3:
         """
-        Component-wise subtraction, `other` must be a `Vec3`.
+        Component-wise subtraction of `self` and `other`.
+        
+        `other` must be a `Vec3`.
         """
     def __truediv__(self, other: object, /) -> Vec3:
         """
-        Scales `self` by `other⁻¹`, which is required to be a `float`.
+        Scaling of `self` by the scalar factor `other⁻¹`.
+        
+        `other` must be a `float`.
         """
     @staticmethod
     def splat(t: float) -> Vec3: ...

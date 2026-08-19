@@ -1,6 +1,8 @@
+use either::Either;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
+use crate::math::Vec3;
 use crate::palette::{Material, MaterialCode, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
@@ -37,12 +39,22 @@ impl Dimensions {
     }
 }
 
+#[pyclass(from_py_object, frozen)]
+#[derive(Copy, Clone)]
+pub enum Pivot {
+    Corner,
+    Center,
+    BottomCenter,
+}
+
 #[pyclass]
 pub struct Model {
     #[pyo3(get)]
     pub dims: Dimensions,
     pub zstride: usize,
     pub data: Box<[Option<MaterialCode>]>,
+    #[pyo3(get)]
+    pub pivot: Either<Pivot, Vec3>,
     #[pyo3(get)]
     pub palette: Py<Palette>,
 }
@@ -97,11 +109,12 @@ impl Model {
 #[pymethods]
 impl Model {
     #[new]
-    pub fn __new__(dims: Dimensions, palette: Py<Palette>) -> Self {
+    pub fn __new__(dims: Dimensions, palette: Py<Palette>, pivot: Either<Pivot, Vec3>) -> Self {
         Self {
             dims,
             zstride: dims.x * dims.y,
             data: vec![None; dims.x * dims.y * dims.z].into_boxed_slice(),
+            pivot,
             palette,
         }
     }
@@ -111,6 +124,7 @@ impl Model {
             dims: self.dims,
             zstride: self.zstride,
             data: self.data.clone(),
+            pivot: self.pivot,
             palette: self.palette.clone_ref(py),
         }
     }

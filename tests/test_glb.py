@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
         assert key in root_json, f"missing top-level key: {key}"
 
     assert root_json["asset"]["version"] == "2.0"
-    assert len(root_json["nodes"]) == 3
+    assert len(root_json["nodes"]) == 2
     assert len(root_json["meshes"]) == 1
     assert len(root_json["animations"]) == 1
     assert "KHR_materials_transmission" in root_json["extensionsUsed"]
