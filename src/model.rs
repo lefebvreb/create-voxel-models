@@ -114,17 +114,17 @@ impl Model {
     fn fill_ellipsoid(&mut self, material: Option<&Material>, center: Int3, radii: Int3) -> PyResult<()> {
         self.check_contains(center)?;
         let code = self.get_material_code(material)?;
-        let (rx, ry, rz) = radii;
-        if rx == 0 || ry == 0 || rz == 0 {
-            return Err(PyValueError::new_err("radii must be at least 1"));
+        if int3::contains_zero(radii) {
+            return Err(PyValueError::new_err("radius must be at least 1"));
         }
+        let r = int3::into_vec3(radii);
         let lo = int3::saturating_sub(center, radii);
         let hi = int3::min(int3::add(center, radii), self.dims.last_index());
         for pos in box_positions(lo, hi) {
             let delta = int3::into_vec3(pos).__sub__(int3::into_vec3(center));
-            let nx = delta.x() / rx as f64;
-            let ny = delta.y() / ry as f64;
-            let nz = delta.z() / rz as f64;
+            let nx = delta.x() / r.x();
+            let ny = delta.y() / r.y();
+            let nz = delta.z() / r.z();
             if nx * nx + ny * ny + nz * nz <= 1.0 {
                 self.set(pos, code);
             }
@@ -169,6 +169,10 @@ impl Model {
         }
     }
 
+    pub fn clip(&self, p1: Int3, p2: Int3, py: Python) -> Self {
+        todo!()
+    }
+
     pub fn flip_x(slf: Bound<Self>) -> Bound<Self> {
         let mut slf_brw = slf.borrow_mut();
         let dims = slf_brw.dims;
@@ -190,18 +194,18 @@ impl Model {
         slf
     }
 
-    pub fn put(&mut self, material: Option<&Material>, pos: Int3) -> PyResult<()> {
-        self.check_contains(pos)?;
+    pub fn put(&mut self, material: Option<&Material>, p: Int3) -> PyResult<()> {
+        self.check_contains(p)?;
         let code = self.get_material_code(material)?;
-        self.set(pos, code);
+        self.set(p, code);
         Ok(())
     }
 
-    pub fn aabb(&mut self, material: Option<&Material>, a: Int3, b: Int3) -> PyResult<()> {
-        self.check_contains(a)?;
-        self.check_contains(b)?;
+    pub fn aabb(&mut self, material: Option<&Material>, p1: Int3, p2: Int3) -> PyResult<()> {
+        self.check_contains(p1)?;
+        self.check_contains(p2)?;
         let code = self.get_material_code(material)?;
-        for pos in box_positions(a, b) {
+        for pos in box_positions(p1, p2) {
             self.set(pos, code);
         }
         Ok(())
@@ -220,23 +224,22 @@ impl Model {
     }
 
     pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
+        self.check_contains(int3::add(other.dims.last_index(), offset))?;
         if !other.palette.is(&self.palette) {
-            return Err(PyValueError::new_err("model does not belong to this model's palette"));
+            return Err(PyValueError::new_err(
+                "self and other have different palettes, which isn't allowed",
+            ));
         }
-        for local in box_positions((0, 0, 0), other.dims.last_index()) {
-            let Some(code) = other.get(local) else {
-                continue;
-            };
-            let pos = int3::add(offset, local);
-            if self.dims.contains(pos) {
-                self.set(pos, Some(code));
+        for local in box_positions(int3::ZERO, other.dims.last_index()) {
+            if let code @ Some(_) = other.get(local) {
+                self.set(int3::add(offset, local), code)
             }
         }
         Ok(())
     }
 
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
-        let scene = Py::new(slf.py(), Scene::default())?.into_bound(slf.py());
+        let scene = Bound::new(slf.py(), Scene::default())?;
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
         Node::add_model(node.bind(slf.py()).clone(), "model".to_string(), slf.unbind(), None)?;
         render(scene, angles, vec![], None, None, None)

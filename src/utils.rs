@@ -11,6 +11,12 @@ pub mod int3 {
     use crate::math::Vec3;
     use crate::utils::Int3;
 
+    pub const ZERO: Int3 = (0, 0, 0);
+
+    pub fn contains_zero((x, y, z): Int3) -> bool {
+        x == 0 || y == 0 || z == 0
+    }
+
     pub fn min((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
         (ax.min(bx), ay.min(by), az.min(bz))
     }
