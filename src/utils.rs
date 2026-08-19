@@ -7,6 +7,31 @@ pub type Dict = HashMap<String, String>;
 
 pub type Int3 = (usize, usize, usize);
 
+pub mod int3 {
+    use crate::math::Vec3;
+    use crate::utils::Int3;
+
+    pub fn min((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax.min(bx), ay.min(by), az.min(bz))
+    }
+
+    pub fn max((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax.max(bx), ay.max(by), az.max(bz))
+    }
+
+    pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax + bx, ay + by, az + bz)
+    }
+
+    pub fn saturating_sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+        (ax.saturating_sub(bx), ay.saturating_sub(by), az.saturating_sub(bz))
+    }
+
+    pub fn into_vec3((x, y, z): Int3) -> Vec3 {
+        Vec3::__new__(x as f64, y as f64, z as f64)
+    }
+}
+
 pub struct HashPy<T>(pub Py<T>);
 
 impl<T> PartialEq for HashPy<T> {

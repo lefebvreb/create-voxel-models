@@ -7,7 +7,7 @@ use crate::palette::{Material, MaterialCode, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
 use crate::tools::render;
-use crate::utils::Int3;
+use crate::utils::{Int3, int3};
 
 #[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
@@ -39,7 +39,13 @@ impl Dimensions {
     }
 
     fn as_vec(&self) -> Vec3 {
-        Vec3::__new__(self.x as f64, self.y as f64, self.z as f64)
+        int3::into_vec3((self.x, self.y, self.z))
+    }
+}
+
+impl Dimensions {
+    fn last_index(&self) -> Int3 {
+        (self.x - 1, self.y - 1, self.z - 1)
     }
 }
 
@@ -105,25 +111,23 @@ impl Model {
         self.data[self.index(pos)] = code;
     }
 
-    fn fill_ellipsoid(&mut self, code: Option<MaterialCode>, c: Int3, r: Int3) -> PyResult<()> {
+    fn fill_ellipsoid(&mut self, material: Option<&Material>, c: Int3, r: Int3) -> PyResult<()> {
         self.check_contains(c)?;
+        let code = self.get_material_code(material)?;
         let (rx, ry, rz) = r;
         if rx == 0 || ry == 0 || rz == 0 {
             return Err(PyValueError::new_err("radii must be at least 1"));
         }
-        let (cx, cy, cz) = c;
-        let lo = (cx.saturating_sub(rx), cy.saturating_sub(ry), cz.saturating_sub(rz));
-        let hi = (
-            (cx + rx).min(self.dims.x - 1),
-            (cy + ry).min(self.dims.y - 1),
-            (cz + rz).min(self.dims.z - 1),
-        );
-        for (x, y, z) in box_positions(lo, hi) {
-            let nx = (x as f64 - cx as f64) / rx as f64;
-            let ny = (y as f64 - cy as f64) / ry as f64;
-            let nz = (z as f64 - cz as f64) / rz as f64;
+        let center = int3::into_vec3(c);
+        let lo = int3::saturating_sub(c, r);
+        let hi = int3::min(int3::add(c, r), self.dims.last_index());
+        for pos in box_positions(lo, hi) {
+            let delta = int3::into_vec3(pos).__sub__(center);
+            let nx = delta.x() / rx as f64;
+            let ny = delta.y() / ry as f64;
+            let nz = delta.z() / rz as f64;
             if nx * nx + ny * ny + nz * nz <= 1.0 {
-                self.set((x, y, z), code);
+                self.set(pos, code);
             }
         }
         Ok(())
@@ -205,32 +209,26 @@ impl Model {
     }
 
     pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
-        let code = self.get_material_code(material)?;
-        self.fill_ellipsoid(code, c, (r, r, r))
+        self.fill_ellipsoid(material, c, (r, r, r))
     }
 
     pub fn spheroid(&mut self, material: Option<&Material>, c: Int3, r_eq: usize, r_polar: usize) -> PyResult<()> {
-        let code = self.get_material_code(material)?;
-        self.fill_ellipsoid(code, c, (r_eq, r_polar, r_eq))
+        self.fill_ellipsoid(material, c, (r_eq, r_polar, r_eq))
     }
 
     pub fn ellipsoid(&mut self, material: Option<&Material>, c: Int3, rx: usize, ry: usize, rz: usize) -> PyResult<()> {
-        let code = self.get_material_code(material)?;
-        self.fill_ellipsoid(code, c, (rx, ry, rz))
+        self.fill_ellipsoid(material, c, (rx, ry, rz))
     }
 
     pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
         if !other.palette.is(&self.palette) {
             return Err(PyValueError::new_err("model does not belong to this model's palette"));
         }
-        let (ox, oy, oz) = offset;
-        let extent = (other.dims.x - 1, other.dims.y - 1, other.dims.z - 1);
-        for local in box_positions((0, 0, 0), extent) {
+        for local in box_positions((0, 0, 0), other.dims.last_index()) {
             let Some(code) = other.get(local) else {
                 continue;
             };
-            let (lx, ly, lz) = local;
-            let pos = (ox + lx, oy + ly, oz + lz);
+            let pos = int3::add(offset, local);
             if self.dims.contains(pos) {
                 self.set(pos, Some(code));
             }
@@ -247,10 +245,7 @@ impl Model {
 }
 
 fn box_positions(a: Int3, b: Int3) -> impl Iterator<Item = Int3> {
-    let (ax, ay, az) = a;
-    let (bx, by, bz) = b;
-    let (x0, x1) = (ax.min(bx), ax.max(bx));
-    let (y0, y1) = (ay.min(by), ay.max(by));
-    let (z0, z1) = (az.min(bz), az.max(bz));
-    (z0..=z1).flat_map(move |z| (y0..=y1).flat_map(move |y| (x0..=x1).map(move |x| (x, y, z))))
+    let (xmin, ymin, zmin) = int3::min(a, b);
+    let (xmax, ymax, zmax) = int3::max(a, b);
+    (zmin..=zmax).flat_map(move |z| (ymin..=ymax).flat_map(move |y| (xmin..=xmax).map(move |x| (x, y, z))))
 }
