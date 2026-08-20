@@ -24,9 +24,22 @@ test:
 
 # Builds the project in release mode.
 build:
-    rm -rf create-voxel-models/dist
-    rm -rf create-voxel-models/references
-    maturin build --release --strip --zig --out create-voxel-models/dist
+    # Create target directories.
+    mkdir -p create-voxel-models/dist
     mkdir -p create-voxel-models/references
+    # Clear previous artifacts.
+    rm -f create-voxel-models.zip
+    rm -f create-voxel-models/references/*
+    rm -f create-voxel-models/dist/*
+    # Build manylinux package wheel file and place it in the dist directory.
+    maturin build --release --strip --zig --out create-voxel-models/dist
+    # Copy pyi stubs to the references directory.
     cp voxels.pyi create-voxel-models/references
+    # Update SKILL.md front matter.
+    yq -i --front-matter=process \
+        ".author = \"$(yq -p toml '.package.authors[0]' Cargo.toml)\" \
+        | .version = \"$(yq -p toml '.package.version' Cargo.toml)\" \
+        | .tags = $(yq -p toml -o=json -I=0 '.package.keywords' Cargo.toml) | (.tags style=\"flow\")" \
+        create-voxel-models/SKILL.md
+    # Zip skill into an archive.
     zip -r create-voxel-models.zip create-voxel-models
