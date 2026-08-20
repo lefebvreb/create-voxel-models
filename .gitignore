@@ -1,6 +1,4 @@
-/.venv
-/create-voxel-models/dist
-/create-voxel-models/references
+/.venv/
 /create-voxel-models.zip
 /target/
 __pycache__
