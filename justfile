@@ -20,7 +20,7 @@ stubs:
 test:
     cargo +stable test
     maturin develop -- -Awarnings
-    @for f in `ls tests/*.py`; do echo -e "\033[1mpython $f\033[0m" && .venv/bin/python $f; done
+    @for file in `ls tests/*.py`; do echo -e "\033[1mpython $file\033[0m" && .venv/bin/python $file; done
 
 # Builds the project in release mode.
 build:
