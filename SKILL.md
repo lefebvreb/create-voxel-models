@@ -4,7 +4,10 @@ description: Create and animate voxel models with support for PBR materials, pre
 author: Benjamin Lefebvre
 version: 0.1.0
 tags: [3d, assets, gltf, voxel]
+license: MIT
 requires: [python]
 ---
+
+# Introduction
 
 

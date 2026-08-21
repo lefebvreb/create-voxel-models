@@ -2,8 +2,9 @@
 name = "voxels"
 description = "Create and animate voxel models with support for PBR materials, preview them and export them in glTF scenes"
 authors = ["Benjamin Lefebvre"]
-keywords = ["3d", "assets", "gltf", "voxel"]
 version = "0.1.0"
+keywords = ["3d", "assets", "gltf", "voxel"]
+license = "MIT"
 edition = "2024"
 publish = false
 

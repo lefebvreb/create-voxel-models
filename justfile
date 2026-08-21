@@ -42,5 +42,6 @@ build:
         wheel = next(Path('target/wheels/').iterdir()); \
         f = ZipFile('create-voxel-models.zip', 'w'); \
         f.write('SKILL.md'); \
+        f.write('LICENSE'); \
         f.write(wheel, arcname=f'dist/{wheel.name}'); \
         f.write('voxels.pyi', arcname='references/voxels.pyi');"
