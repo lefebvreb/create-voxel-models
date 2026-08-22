@@ -16,14 +16,14 @@ clippy:
 stubs:
     maturin generate-stubs --out . -- -Awarnings
 
-# Compiles the project in debug mode, bundles it as a python module and runs all test scripts in a venv.
+# Compiles the project in debug mode, bundles it as a python package and runs all test scripts in a venv.
 test:
     cargo +stable test
     maturin develop -- -Awarnings
     @for file in `ls tests/*.py`; do echo -e "\033[1mpython $file\033[0m" && .venv/bin/python $file; done
 
-# Builds the project in release mode.
-build:
+# Builds the project in release mode, bundles all files into a zipped agent skill.
+build-skill:
     # Remove previous wheel artifacts.
     rm -f target/wheels/*
     # Build manylinux package wheel file.
