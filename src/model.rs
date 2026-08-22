@@ -2,12 +2,11 @@ use either::Either;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
-use crate::math::Vec3;
+use crate::math::{Int3, Vec3, int3};
 use crate::palette::{Material, MaterialCode, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
 use crate::tools::render;
-use crate::utils::{Int3, int3};
 
 #[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
