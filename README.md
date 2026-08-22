@@ -1,19 +1,14 @@
-# voxel_lib
+# voxels
 
-A library that allows programmatically creating and editing game-ready Voxel models. Features:
+A native Python package written in Rust that allows programmatically creating and editing game-ready 3d voxel models. Features:
 * An API to create and edit models by adding primitive shapes or single voxels.
-* PBR materials for glass, light emitters and metals.
-* Hierarchical scenes with support for simple animations (translation, scale, rotation...), using empty nodes as controllers.
-* Efficient and correct meshing algorithm (such as greedy meshing).
-* Exporting scenes to the .GLB format.
-* Rendering models under different angles and at different keyframes with headless bevy, exporting these renders to PNGs.
+* PBR materials for diffuse materials, glasses, light emitters and metals.
+* Hierarchical scenes with support for simple animations (translation, scale, rotation...), using nodes as controllers.
+* Efficient greedy meshing of 3d models.
+* Exporting scenes to the binary glTF 2.0 format (`.glb`).
+* Rendering models under different angles and at different keyframes with headless bevy, exporting these renders to `.png`s for LLM vision.
 
-The goal is then to make a native python lib that wraps these APIs and allows constructing such scenes 
-from python scripts. Along with an agentic skill, this would allow AI agents to create voxel models. The rendering +
-vision capabilities would allow them to get quality feedback on their own work.
+Human editing of AI-generated models isn't supported for now. That would most likely entail a system to export/import
+scenes to the `.vox` file format, which comes with its own challenges.
 
-We won't support human editing of AI-generated models for now. That would most likely entail a system to export/import
-scenes to the .VOX file format. Even though we won't support that yet, we still need to be careful to make whatever
-data model we use for our scenes and models be compatible with both .VOX and .GLB
-
-All code already written can be thrown away if necessary.
+MIT License.
