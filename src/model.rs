@@ -101,7 +101,9 @@ impl Model {
         match self.pivot {
             Either::Left(Pivot::Corner) => Vec3::ZERO,
             Either::Left(Pivot::Center) => self.dims.as_vec().__mul__(0.5),
-            Either::Left(Pivot::BottomCenter) => Vec3::new(self.dims.x as f64 * 0.5, 0.0, self.dims.z as f64 * 0.5),
+            Either::Left(Pivot::BottomCenter) => {
+                Vec3::new_unchecked(self.dims.x as f64 * 0.5, 0.0, self.dims.z as f64 * 0.5)
+            }
             Either::Right(v) => v,
         }
     }

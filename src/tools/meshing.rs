@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use pyo3::{Bound, PyResult};
+use pyo3::Bound;
 
 use crate::model::{Dimensions, Model};
 use crate::palette::{Color, Material, MaterialCode, Palette, Volume};
@@ -83,7 +83,7 @@ pub struct PaletteData {
     pub materials: Vec<MaterialData>,
 }
 
-pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
+pub fn export_model(model: Bound<Model>) -> MeshData {
     let model_ref = model.borrow();
     let palette_ref = model_ref.palette.bind(model.py()).borrow();
     let materials: Vec<MaterialProps> = palette_ref
@@ -95,16 +95,10 @@ pub fn export_model(model: Bound<Model>) -> PyResult<MeshData> {
     let Dimensions { x, y, z } = model_ref.dims;
     let pivot = model_ref.pivot_offset();
     let pivot_offset = [pivot.inner.x as f32, pivot.inner.y as f32, pivot.inner.z as f32];
-    Ok(build_mesh(
-        [x, y, z],
-        &model_ref.data,
-        &materials,
-        &layout,
-        pivot_offset,
-    ))
+    build_mesh([x, y, z], &model_ref.data, &materials, &layout, pivot_offset)
 }
 
-pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
+pub fn export_palette(palette: Bound<Palette>) -> PaletteData {
     let palette_ref = palette.borrow();
     let materials: Vec<MaterialProps> = palette_ref
         .materials
@@ -112,7 +106,7 @@ pub fn export_palette(palette: Bound<Palette>) -> PyResult<PaletteData> {
         .map(|m| MaterialProps::from(m.get()))
         .collect();
     let layout = build_palette_layout(&materials);
-    Ok(build_palette_data(&materials, &layout))
+    build_palette_data(&materials, &layout)
 }
 
 // --- Palette layout: groups materials into buckets and lays out atlas texels ---

@@ -1,12 +1,21 @@
 use std::f64::consts::PI;
 
-use pyo3::{pyclass, pymethods};
+use pyo3::exceptions::PyValueError;
+use pyo3::{PyResult, pyclass, pymethods};
 
 /// A 3-dimensional real column vector, with double precision components.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Vec3 {
     pub inner: glam::DVec3,
+}
+
+impl Vec3 {
+    pub fn new_unchecked(x: f64, y: f64, z: f64) -> Self {
+        Self {
+            inner: glam::DVec3::new(x, y, z),
+        }
+    }
 }
 
 #[pymethods]
@@ -24,17 +33,23 @@ impl Vec3 {
     };
 
     #[staticmethod]
-    pub fn splat(t: f64) -> Self {
-        Self {
-            inner: glam::DVec3::splat(t),
+    pub fn splat(t: f64) -> PyResult<Self> {
+        if !t.is_finite() {
+            return Err(PyValueError::new_err("t must be finite"));
         }
+        Ok(Self {
+            inner: glam::DVec3::splat(t),
+        })
     }
 
     #[new]
-    pub fn new(x: f64, y: f64, z: f64) -> Self {
-        Self {
-            inner: glam::DVec3::new(x, y, z),
+    pub fn new(x: f64, y: f64, z: f64) -> PyResult<Self> {
+        if !(x.is_finite() && y.is_finite() && z.is_finite()) {
+            return Err(PyValueError::new_err("x, y, and z must all be finite"));
         }
+        Ok(Self {
+            inner: glam::DVec3::new(x, y, z),
+        })
     }
 
     #[getter]
@@ -110,35 +125,47 @@ impl Quat {
 
     /// Creates a quaternion that rotates `angle` degrees around the x axis.
     #[staticmethod]
-    pub fn from_rotation_x(angle: f64) -> Self {
-        Self {
-            inner: glam::DQuat::from_rotation_x(deg_to_rad(angle)),
+    pub fn from_rotation_x(angle: f64) -> PyResult<Self> {
+        if !angle.is_finite() {
+            return Err(PyValueError::new_err("angle must be finite"));
         }
+        Ok(Self {
+            inner: glam::DQuat::from_rotation_x(deg_to_rad(angle)),
+        })
     }
 
     /// Creates a quaternion that rotates `angle` degrees around the y axis.
     #[staticmethod]
-    pub fn from_rotation_y(angle: f64) -> Self {
-        Self {
-            inner: glam::DQuat::from_rotation_y(deg_to_rad(angle)),
+    pub fn from_rotation_y(angle: f64) -> PyResult<Self> {
+        if !angle.is_finite() {
+            return Err(PyValueError::new_err("angle must be finite"));
         }
+        Ok(Self {
+            inner: glam::DQuat::from_rotation_y(deg_to_rad(angle)),
+        })
     }
 
     /// Creates a quaternion that rotates `angle` degrees around the z axis.
     #[staticmethod]
-    pub fn from_rotation_z(angle: f64) -> Self {
-        Self {
-            inner: glam::DQuat::from_rotation_z(deg_to_rad(angle)),
+    pub fn from_rotation_z(angle: f64) -> PyResult<Self> {
+        if !angle.is_finite() {
+            return Err(PyValueError::new_err("angle must be finite"));
         }
+        Ok(Self {
+            inner: glam::DQuat::from_rotation_z(deg_to_rad(angle)),
+        })
     }
 
     /// Creates a quaternion that rotates `angle` degrees around `axis`.
     /// `axis` does not need to be normalized.
     #[staticmethod]
-    pub fn from_axis_angle(axis: Vec3, angle: f64) -> Self {
-        Self {
-            inner: glam::DQuat::from_axis_angle(axis.inner.normalize(), deg_to_rad(angle)),
+    pub fn from_axis_angle(axis: Vec3, angle: f64) -> PyResult<Self> {
+        if !angle.is_finite() {
+            return Err(PyValueError::new_err("angle must be finite"));
         }
+        Ok(Self {
+            inner: glam::DQuat::from_axis_angle(axis.inner.normalize(), deg_to_rad(angle)),
+        })
     }
 
     pub fn conjugate(&self) -> Self {
@@ -192,6 +219,6 @@ pub mod int3 {
     }
 
     pub fn into_vec3((x, y, z): Int3) -> Vec3 {
-        Vec3::new(x as f64, y as f64, z as f64)
+        Vec3::new_unchecked(x as f64, y as f64, z as f64)
     }
 }

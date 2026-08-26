@@ -74,11 +74,11 @@ impl Volume {
     #[new]
     #[pyo3(signature = (color, distance, *, thickness = 1.0))]
     pub fn new(color: Color, distance: f64, thickness: f64) -> PyResult<Self> {
-        if distance <= 0.0 {
-            return Err(PyValueError::new_err("distance must be greater than 0.0"));
+        if !(distance.is_finite() && distance > 0.0) {
+            return Err(PyValueError::new_err("distance must be finite and greater than 0.0"));
         }
-        if thickness <= 0.0 {
-            return Err(PyValueError::new_err("thickness must be greater than 0.0"));
+        if !(thickness.is_finite() && thickness > 0.0) {
+            return Err(PyValueError::new_err("thickness must be finite and greater than 0.0"));
         }
         Ok(Self {
             color,
@@ -122,13 +122,15 @@ impl Palette {
         if !(0.0..=1.0).contains(&transmission) {
             return Err(PyValueError::new_err("transmission must be between 0.0 and 1.0"));
         }
-        if !(ior == 0.0 || ior >= 1.0) {
+        if !(ior == 0.0 || (ior.is_finite() && ior >= 1.0)) {
             return Err(PyValueError::new_err(
-                "ior must be 0.0, or greater than or equal to 1.0",
+                "ior must be 0.0, or finite and greater than or equal to 1.0",
             ));
         }
-        if emissive < 0.0 {
-            return Err(PyValueError::new_err("emissive must be greater than or equal to 0.0"));
+        if !(emissive.is_finite() && emissive >= 0.0) {
+            return Err(PyValueError::new_err(
+                "emissive must be finite and greater than or equal to 0.0",
+            ));
         }
         let mut slf_brw = slf.borrow_mut();
         let index = slf_brw.materials.len();

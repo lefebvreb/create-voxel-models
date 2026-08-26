@@ -3,7 +3,6 @@
 use std::collections::{BTreeSet, HashMap};
 
 use png::ColorType;
-use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult};
 
 use super::gltf;
@@ -73,8 +72,8 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
     }
     root.extensions_used = extensions_used.into_iter().map(String::from).collect();
 
-    let json_bytes = serde_json::to_vec(&root)
-        .map_err(|_| PyValueError::new_err("scene contains a non-finite value that cannot be exported to glTF"))?;
+    let json_bytes =
+        serde_json::to_vec(&root).expect("all exportable floats are validated finite at construction time");
     Ok(write_glb_container(&json_bytes, &writer.bytes))
 }
 
@@ -156,7 +155,7 @@ fn get_or_build_palette_materials(
     if let Some(indices) = palette_cache.get(&key) {
         return Ok(indices.clone());
     }
-    let data: PaletteData = meshing::export_palette(palette.bind(py).clone())?;
+    let data: PaletteData = meshing::export_palette(palette.bind(py).clone());
     let mut indices = Vec::with_capacity(data.materials.len());
     for material in &data.materials {
         indices.push(build_material(material, root, writer, extensions_used)?);
@@ -178,7 +177,7 @@ fn get_or_build_model_primitives(
     if let Some(primitives) = model_cache.get(&key) {
         return Ok(primitives.clone());
     }
-    let mesh_data = meshing::export_model(model.bind(py).clone())?;
+    let mesh_data = meshing::export_model(model.bind(py).clone());
     // A hollow model (no voxels set) produces no primitives; resolving its palette into materials
     // anyway would leave genuinely unreferenced materials/textures in the output, so skip it.
     if mesh_data.primitives.is_empty() {
@@ -224,7 +223,7 @@ fn build_material(
     let base_color_texture = push_texture(
         root,
         writer,
-        encode_png(width, height, &base_color_bytes, ColorType::Rgb)?,
+        encode_png(width, height, &base_color_bytes, ColorType::Rgb),
     );
 
     let metallic_roughness_bytes: Vec<u8> = material
@@ -235,7 +234,7 @@ fn build_material(
     let metallic_roughness_texture = push_texture(
         root,
         writer,
-        encode_png(width, height, &metallic_roughness_bytes, ColorType::Rgb)?,
+        encode_png(width, height, &metallic_roughness_bytes, ColorType::Rgb),
     );
 
     let mut extensions = gltf::MaterialExtensions::default();
@@ -249,7 +248,7 @@ fn build_material(
         let transmission_texture = push_texture(
             root,
             writer,
-            encode_png(width, height, &material.transmission, ColorType::Grayscale)?,
+            encode_png(width, height, &material.transmission, ColorType::Grayscale),
         );
         extensions.transmission = Some(gltf::KhrMaterialsTransmission {
             transmission_factor: 1.0,

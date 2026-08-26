@@ -23,7 +23,7 @@ use bevy::window::{ExitCondition, WindowPlugin};
 use bevy::world_serialization::{WorldAssetRoot, WorldInstance, WorldInstanceSpawner};
 use glam::DVec3;
 use png::ColorType;
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::{Bound, PyResult};
 
 use super::glb::export_glb;
@@ -47,6 +47,13 @@ pub fn render(
 ) -> PyResult<RenderOutput> {
     if angles.is_empty() {
         return Err(PyValueError::new_err("angles must not be empty"));
+    }
+    if let Some(name) = &animation
+        && !scene.borrow().anims.contains_key(name)
+    {
+        return Err(PyValueError::new_err(format!(
+            "no animation named {name:?} on this scene"
+        )));
     }
     let include = include.unwrap_or_default();
     let exclude = exclude.unwrap_or_default();
@@ -79,7 +86,12 @@ pub fn render(
         let base_distance = fit_distance(radius, fov_y, FIT_PADDING);
 
         let output_dir = output_dir();
-        std::fs::create_dir_all(&output_dir)?;
+        std::fs::create_dir_all(&output_dir).map_err(|e| {
+            std::io::Error::new(
+                e.kind(),
+                format!("failed to create output directory {}: {e}", output_dir.display()),
+            )
+        })?;
 
         let time_values: Vec<f64> = match &animation_setup {
             Some(_) if !times.is_empty() => times,
@@ -96,10 +108,12 @@ pub fn render(
                 position_camera(ra.app.world_mut(), ra.camera, center, base_distance, angle);
                 let (width, height, pixels) = capture_screenshot(&mut ra.app, &ra.target)?;
                 let file = output_dir.join(output_filename(time_idx, angle_idx));
-                std::fs::write(
-                    output_dir.join(&file),
-                    encode_png(width, height, &pixels, ColorType::Rgb)?,
-                )?;
+                std::fs::write(&file, encode_png(width, height, &pixels, ColorType::Rgb)).map_err(|e| {
+                    std::io::Error::new(
+                        e.kind(),
+                        format!("failed to write screenshot to {}: {e}", file.display()),
+                    )
+                })?;
                 files.push(file);
             }
         }
@@ -227,7 +241,7 @@ impl RenderApp {
         poll_until(&mut self.app, |app| {
             let server = app.world().resource::<AssetServer>();
             match server.load_state(handle.id()) {
-                LoadState::Failed(err) => Err(PyValueError::new_err(format!(
+                LoadState::Failed(err) => Err(PyRuntimeError::new_err(format!(
                     "failed to load exported scene into the renderer: {err}"
                 ))),
                 _ => Ok(server.is_loaded_with_dependencies(handle.id())),
@@ -245,16 +259,13 @@ impl RenderApp {
             .default_scene
             .clone()
             .or_else(|| gltf.scenes.first().cloned())
-            .ok_or_else(|| PyValueError::new_err("exported scene contains no glTF scene"))?;
-        let clip = match animation {
-            Some(name) => Some(
-                gltf.named_animations
-                    .get(name)
-                    .cloned()
-                    .ok_or_else(|| PyValueError::new_err(format!("no animation named {name:?} on this scene")))?,
-            ),
-            None => None,
-        };
+            .expect("export_glb always emits exactly one glTF scene");
+        let clip = animation.map(|name| {
+            gltf.named_animations
+                .get(name)
+                .cloned()
+                .expect("animation name was already validated in render()")
+        });
         Ok((scene_handle, clip))
     }
 }
@@ -278,7 +289,7 @@ fn poll_until(app: &mut App, mut ready: impl FnMut(&mut App) -> PyResult<bool>) 
             return Ok(());
         }
     }
-    Err(PyValueError::new_err(
+    Err(PyRuntimeError::new_err(
         "timed out waiting for the headless renderer to become ready",
     ))
 }
@@ -486,7 +497,7 @@ fn capture_screenshot(app: &mut App, target: &Handle<Image>) -> PyResult<(u32, u
         .expect("poll_until only returns once captured is set");
     let rgb = image
         .try_into_dynamic()
-        .map_err(|e| PyValueError::new_err(e.to_string()))?
+        .expect("render target is always constructed as Rgba8UnormSrgb, which is always convertible")
         .to_rgb8();
     let (width, height) = (rgb.width(), rgb.height());
     Ok((width, height, rgb.into_raw()))

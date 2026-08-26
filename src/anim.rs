@@ -96,6 +96,9 @@ pub struct Channel<T> {
 
 impl<T> Channel<T> {
     fn new(input: Vec<f64>, output: Vec<T>, interpolation: Option<Interpolation>) -> PyResult<Self> {
+        if !input.iter().all(|t| t.is_finite()) {
+            return Err(PyValueError::new_err("keyframe times must all be finite"));
+        }
         match interpolation {
             Some(Interpolation::CubicSpline) => {
                 if input.len() * 3 != output.len() {
