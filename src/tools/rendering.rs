@@ -12,11 +12,13 @@ use bevy::camera::{Hdr, RenderTarget};
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::gltf::Gltf;
 use bevy::image::Image;
-use bevy::light::{DirectionalLight, GlobalAmbientLight};
+use bevy::light::{DirectionalLight, EnvironmentMapLight, light_consts};
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
-use bevy::render::render_resource::{Extent3d, PollType, TextureDimension, TextureFormat, TextureUsages};
+use bevy::render::render_resource::{
+    Extent3d, PollType, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, TextureViewDimension,
+};
 use bevy::render::renderer::RenderDevice;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};
 use bevy::window::{ExitCondition, WindowPlugin};
@@ -31,7 +33,7 @@ use super::utils::encode_png;
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::Scene;
 
-const RESOLUTION: u32 = 512;
+const RESOLUTION: u32 = 448;
 const MAX_POLL_TICKS: u32 = 300;
 const FIT_PADDING: f64 = 1.3;
 const MIN_RADIUS: f64 = 0.5;
@@ -189,8 +191,6 @@ impl RenderApp {
         app.finish();
         app.cleanup();
 
-        setup_lighting(app.world_mut());
-
         let target = app
             .world_mut()
             .resource_mut::<Assets<Image>>()
@@ -211,6 +211,8 @@ impl RenderApp {
                 Transform::IDENTITY,
             ))
             .id();
+
+        setup_lighting(app.world_mut(), camera);
 
         Self {
             app,
@@ -380,19 +382,115 @@ fn seek_animation(world: &mut World, entities: &[Entity], node_index: AnimationN
 
 // --- Lighting/background ---
 
-fn setup_lighting(world: &mut World) {
+/// Lights the scene like a neutral product-photography studio rather than a single hard sun:
+/// there is no ground plane in this renderer, so a shadow-casting directional light only ever
+/// self-shadows the model (an artifact, not a useful depth cue), and a flat ambient term gives
+/// metallic materials nothing to reflect. A soft hemispherical environment light replaces the
+/// flat ambient with direction-varying fill (its smooth gradient is physically correct for
+/// diffuse irradiance), while the directional light stays only for its Lambertian shading
+/// gradient (its shadow disabled).
+///
+/// The diffuse map alone isn't enough to make a mirror-like surface *read* as reflective
+/// though: it's uniform across all four side faces, so a specular surface shows only a smooth
+/// pitch-based tint, indistinguishable from ordinary diffuse shading. A Lambertian surface can
+/// never reproduce spatial structure regardless of the environment, so giving the specular
+/// probe an actual checkered pattern (`specular_probe_cubemap`) is what makes reflectivity an
+/// unambiguous visual signal: only a specular material will show the pattern, and it will
+/// visibly shift as the camera orbits or the model animates.
+fn setup_lighting(world: &mut World, camera: Entity) {
     world.spawn((
         DirectionalLight {
-            shadow_maps_enabled: true,
+            // A gentle form-defining light, not a dominant one: matches Bevy's own basic
+            // lighting example (`examples/3d/lighting.rs`) rather than the library default
+            // (`AMBIENT_DAYLIGHT`, 10x brighter), which left the environment fill below
+            // completely unable to compete - the actual cause of the model's shaded side
+            // reading as "in shadow" even with shadow casting already disabled.
+            illuminance: light_consts::lux::OVERCAST_DAY,
+            shadow_maps_enabled: false,
             ..default()
         },
         Transform::default().looking_to(Vec3::new(-0.5, -1.0, -0.3), Vec3::Y),
     ));
-    world.insert_resource(GlobalAmbientLight {
-        color: Color::WHITE,
-        brightness: 120.0,
-        ..default()
-    });
+
+    let mut env_light = {
+        let mut images = world.resource_mut::<Assets<Image>>();
+        let mut env_light = EnvironmentMapLight::hemispherical_gradient(
+            &mut images,
+            Color::srgb_u8(210, 210, 214),
+            Color::srgb_u8(140, 140, 144),
+            Color::srgb_u8(70, 70, 74),
+        );
+        env_light.specular_map = specular_probe_cubemap(&mut images);
+        env_light
+    };
+    // In the 500-2000 range Bevy's own examples use for this field (e.g.
+    // `examples/3d/light_probe_blending.rs`, `examples/3d/rotate_environment_map.rs`), and the
+    // same order of magnitude as the directional light above rather than two orders below it.
+    env_light.intensity = 1500.0;
+    world.entity_mut(camera).insert(env_light);
+}
+
+const SPECULAR_PROBE_SIZE: u32 = 8;
+const SPECULAR_PROBE_BLOCK: u32 = 2;
+
+/// A small checkered cubemap for `EnvironmentMapLight::specular_map`. Unlike the smooth
+/// gradient used for diffuse (see `setup_lighting`), the specular probe needs real per-face
+/// spatial structure - a uniform face is indistinguishable, in a reflection, from plain
+/// ambient shading. This matters most at the level of whole cube faces, not fine texture
+/// detail: this renderer draws voxel models, whose surfaces are flat axis-aligned quads, so a
+/// flat face's reflection vector barely varies across it and only ever samples a narrow patch
+/// of one (or two, near an edge) cubemap face - any *within-face* checker detail mostly
+/// blends away. What a flat voxel face *can* show is a stark difference between which of the
+/// 6 cubemap faces it happens to reflect, so every face gets a distinct, non-monotonic
+/// brightness (not just "top vs. everything else") - two adjacent voxel faces (e.g. front and
+/// top) then reflect visibly unrelated tones, which plain Lambertian diffuse shading (whose
+/// brightness varies smoothly and consistently with the light direction) can never produce.
+/// Grayscale-only so it adds reflection detail without tinting authored material colors.
+fn specular_probe_cubemap(images: &mut Assets<Image>) -> Handle<Image> {
+    // Face order matches wgpu's cubemap layer convention: +X, -X, +Y, -Y, +Z, -Z.
+    // Values are deliberately non-monotonic so no two (let alone adjacent) faces blend into
+    // "the same tone" - but, unlike the first attempt at this, kept within a band that never
+    // drops near-black: real neutral-studio environments (e.g. the `RoomEnvironment` behind
+    // `<model-viewer>`'s default lighting) stay "even from all sides, though not uniform"
+    // rather than leaving any direction dark, which is what a wide 5-255 spread was doing to
+    // this renderer's metal materials.
+    const FACES: [(u8, u8); 6] = [
+        (240, 170), // +X
+        (155, 85),  // -X
+        (255, 185), // +Y (top, brightest)
+        (135, 65),  // -Y (bottom, darkest)
+        (180, 110), // +Z
+        (210, 140), // -Z
+    ];
+
+    let mut data = Vec::with_capacity((SPECULAR_PROBE_SIZE * SPECULAR_PROBE_SIZE * 6 * 4) as usize);
+    for (light, dark) in FACES {
+        for y in 0..SPECULAR_PROBE_SIZE {
+            for x in 0..SPECULAR_PROBE_SIZE {
+                let checker = (x / SPECULAR_PROBE_BLOCK + y / SPECULAR_PROBE_BLOCK) % 2 == 0;
+                let value = if checker { light } else { dark };
+                data.extend_from_slice(&[value, value, value, 255]);
+            }
+        }
+    }
+
+    images.add(Image {
+        texture_view_descriptor: Some(TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            ..default()
+        }),
+        ..Image::new(
+            Extent3d {
+                width: SPECULAR_PROBE_SIZE,
+                height: SPECULAR_PROBE_SIZE,
+                depth_or_array_layers: 6,
+            },
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::RENDER_WORLD,
+        )
+    })
 }
 
 // --- Camera bounds and placement ---
