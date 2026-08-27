@@ -192,7 +192,7 @@ pub fn deg_to_rad(a: f64) -> f64 {
     a * (PI / 180.0)
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct Int3 {
     pub x: usize,
     pub y: usize,

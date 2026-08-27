@@ -91,7 +91,8 @@ impl Model {
     fn check_contains(&self, a: Int3) -> PyResult<()> {
         if !self.dims.contains(a) {
             return Err(PyValueError::new_err(format!(
-                "coordinates ({a:?}) are out of bounds of this model"
+                "coordinates ({}, {}, {}) are out of bounds of this model",
+                a.x, a.y, a.z,
             )));
         }
         Ok(())
