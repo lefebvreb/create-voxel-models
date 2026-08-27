@@ -1,11 +1,11 @@
 ---
 name: create-voxel-models
-description: Create and animate voxel models with support for PBR materials, preview them and export them in glTF scenes
-author: Benjamin Lefebvre
-version: 0.1.0
-tags: [3d, assets, gltf, voxel]
+description: Create and animate voxel models with support for PBR materials, preview them and export them in glTF scenes.
 license: MIT
-requires: [python]
+compatibility: Requires Python 3.8+
+metadata:
+  author: Benjamin Lefebvre
+  version: 0.1.0
 ---
 
 # Introduction
@@ -33,12 +33,13 @@ You can get a full reference of what APIs this package offers in the `reference/
 
 # Project structuring
 
-`Palette`s can and should be shared between `Model`s. `Model`s are composable and should be easily accessible. This begs a project structure such as this one:
+`Palette`s can and should be shared between `Model`s. `Model`s are composable and should be easily accessible. This naturally leads to adopting a project structure like:
 
 ```
 palettes/
 models/
 scenes/
+GUIDELINES.md
 ```
 
 `models/` can be further divided into subfolders, if the project size grows too large, to group sets of `Model`s used in a given `Scene`, or similar `Model`s, for example.

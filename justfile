@@ -31,10 +31,8 @@ build-skill:
     # Update SKILL.md front matter.
     yq -i --front-matter=process \
         " .description = \"$(yq -p toml '.package.description' Cargo.toml)\" \
-        | .author = \"$(yq -p toml '.package.authors[0]' Cargo.toml)\" \
-        | .version = \"$(yq -p toml '.package.version' Cargo.toml)\" \
-        | .tags = $(yq -p toml -o=json -I=0 '.package.keywords' Cargo.toml) \
-        | (.tags style=\"flow\")" \
+        | .metadata.author = \"$(yq -p toml '.package.authors[0]' Cargo.toml)\" \
+        | .metadata.version = \"$(yq -p toml '.package.version' Cargo.toml)\"" \
         SKILL.md
     # Zip SKILL.md, wheel and pyi stubs into an archive.
     python -c "from pathlib import Path; \
