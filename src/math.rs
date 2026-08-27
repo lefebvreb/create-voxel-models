@@ -1,4 +1,5 @@
 use std::f64::consts::PI;
+use std::ops::{Add, Sub};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::inspect::PyStaticExpr;
@@ -109,6 +110,12 @@ impl Vec3 {
     }
 }
 
+impl From<Int3> for Vec3 {
+    fn from(value: Int3) -> Self {
+        Self::new_unchecked(value.x as f64, value.y as f64, value.z as f64)
+    }
+}
+
 /// A quaternion, with double precisions components.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
@@ -187,55 +194,98 @@ pub fn deg_to_rad(a: f64) -> f64 {
     a * (PI / 180.0)
 }
 
-pub struct Int3_2 {
+#[derive(Copy, Clone)]
+pub struct Int3 {
     pub x: usize,
     pub y: usize,
     pub z: usize,
 }
 
-impl<'a, 'py> FromPyObject<'a, 'py> for Int3_2 {
+impl Int3 {
+    pub const ZERO: Self = Self::new(0, 0, 0);
+
+    pub const ONE: Self = Self::new(1, 1, 1);
+
+    pub const fn new(x: usize, y: usize, z: usize) -> Self {
+        Self { x, y, z }
+    }
+
+    pub fn contains_zero(self) -> bool {
+        self.x == 0 || self.y == 0 || self.z == 0
+    }
+
+    pub fn min(self, other: Self) -> Self {
+        Self::new(self.x.min(other.x), self.y.min(other.y), self.z.min(other.z))
+    }
+
+    pub fn max(self, other: Self) -> Self {
+        Self::new(self.x.max(other.x), self.y.max(other.y), self.z.max(other.z))
+    }
+
+    pub fn saturating_sub(self, rhs: Self) -> Self {
+        Self::new(self.x.saturating_sub(rhs.x), self.y.saturating_sub(rhs.y), self.z.saturating_sub(rhs.z))
+    }
+}
+
+impl Add for Int3 {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self::new(self.x + rhs.x, self.y + rhs.y, self.z + rhs.z)
+    }
+}
+
+impl Sub for Int3 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
+    }
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Int3 {
     type Error = <(usize, usize, usize) as FromPyObject<'a, 'py>>::Error;
 
     const INPUT_TYPE: PyStaticExpr = <(usize, usize, usize) as FromPyObject<'a, 'py>>::INPUT_TYPE;
 
     fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        obj.extract::<(usize, usize, usize)>().map(|(x, y, z)| Self { x, y, z })
+        obj.extract::<(usize, usize, usize)>().map(|(x, y, z)| Self::new(x, y, z))
     }
 }
 
-pub type Int3 = (usize, usize, usize);
+// pub type Int3 = (usize, usize, usize);
 
-pub mod int3 {
-    use super::{Int3, Vec3};
+// pub mod int3 {
+//     use super::{Int3, Vec3};
 
-    pub const ZERO: Int3 = (0, 0, 0);
-    pub const ONE: Int3 = (1, 1, 1);
+//     pub const ZERO: Int3 = (0, 0, 0);
+//     pub const ONE: Int3 = (1, 1, 1);
 
-    pub fn contains_zero((x, y, z): Int3) -> bool {
-        x == 0 || y == 0 || z == 0
-    }
+//     pub fn contains_zero((x, y, z): Int3) -> bool {
+//         x == 0 || y == 0 || z == 0
+//     }
 
-    pub fn min((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax.min(bx), ay.min(by), az.min(bz))
-    }
+//     pub fn min((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+//         (ax.min(bx), ay.min(by), az.min(bz))
+//     }
 
-    pub fn max((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax.max(bx), ay.max(by), az.max(bz))
-    }
+//     pub fn max((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+//         (ax.max(bx), ay.max(by), az.max(bz))
+//     }
 
-    pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax + bx, ay + by, az + bz)
-    }
+//     pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+//         (ax + bx, ay + by, az + bz)
+//     }
 
-    pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax - bx, ay - by, az - bz)
-    }
+//     pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+//         (ax - bx, ay - by, az - bz)
+//     }
 
-    pub fn saturating_sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-        (ax.saturating_sub(bx), ay.saturating_sub(by), az.saturating_sub(bz))
-    }
+//     pub fn saturating_sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
+//         (ax.saturating_sub(bx), ay.saturating_sub(by), az.saturating_sub(bz))
+//     }
 
-    pub fn into_vec3((x, y, z): Int3) -> Vec3 {
-        Vec3::new_unchecked(x as f64, y as f64, z as f64)
-    }
-}
+//     pub fn into_vec3((x, y, z): Int3) -> Vec3 {
+//         Vec3::new_unchecked(x as f64, y as f64, z as f64)
+//     }
+// }

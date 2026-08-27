@@ -216,8 +216,6 @@ impl Model {
         Ok(())
     }
 
-    pub fn __test(&self, a: crate::math::Int3_2) {}
-
     pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
         self.fill_ellipsoid(material, c, (r, r, r))
     }
