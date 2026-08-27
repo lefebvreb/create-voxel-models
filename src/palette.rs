@@ -21,7 +21,7 @@ impl Color {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct MaterialCode(NonZeroU8);
 
 impl MaterialCode {
