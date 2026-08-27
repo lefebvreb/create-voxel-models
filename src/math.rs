@@ -7,7 +7,7 @@ use pyo3::{Borrowed, FromPyObject, PyAny, PyResult, pyclass, pymethods};
 
 use crate::model::Dimensions;
 
-/// A 3-dimensional real column vector, with double precision components.
+/// A 3D vector with double-precision components.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Vec3 {
@@ -24,18 +24,19 @@ impl Vec3 {
 
 #[pymethods]
 impl Vec3 {
-    /// A vector that only contains zeros.
+    /// The zero vector.
     #[classattr]
     pub const ZERO: Self = Self {
         inner: glam::DVec3::ZERO,
     };
 
-    /// A vector that only contains ones.
+    /// The vector whose components are all one.
     #[classattr]
     pub const ONES: Self = Self {
         inner: glam::DVec3::ONE,
     };
 
+    /// Create a vector with every component equal to `t`.
     #[staticmethod]
     pub fn splat(t: f64) -> PyResult<Self> {
         if !t.is_finite() {
@@ -71,40 +72,33 @@ impl Vec3 {
         self.inner.z
     }
 
+    /// Negate each component.
     pub fn __neg__(&self) -> Self {
         Self { inner: -self.inner }
     }
 
-    /// Component-wise addition of `self` and `other`.
-    ///
-    /// `other` must be a `Vec3`.
+    /// Add `self` and `other`, another `Vec3`, component-wise.
     pub fn __add__(&self, other: Self) -> Self {
         Self {
             inner: self.inner + other.inner,
         }
     }
 
-    /// Component-wise subtraction of `self` and `other`.
-    ///
-    /// `other` must be a `Vec3`.
+    /// Subtract `other`, another `Vec3`, from `self` component-wise.
     pub fn __sub__(&self, other: Self) -> Self {
         Self {
             inner: self.inner - other.inner,
         }
     }
 
-    /// Scaling of `self` by the scalar factor `other`.
-    ///
-    /// `other` must be a `float`.
+    /// Scale `self` by the scalar `other`.
     pub fn __mul__(&self, other: f64) -> Self {
         Self {
             inner: self.inner * other,
         }
     }
 
-    /// Scaling of `self` by the scalar factor `other⁻¹`.
-    ///
-    /// `other` must be a `float`.
+    /// Divide `self` by the scalar `other`.
     pub fn __truediv__(&self, other: f64) -> Self {
         Self {
             inner: self.inner / other,
@@ -118,7 +112,7 @@ impl From<Int3> for Vec3 {
     }
 }
 
-/// A unit quaternion, with double precisions components.
+/// A unit quaternion with double-precision components, representing a 3D rotation.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Quat {
@@ -127,13 +121,13 @@ pub struct Quat {
 
 #[pymethods]
 impl Quat {
-    /// The identity quaternion, equivalent to no rotation.
+    /// The identity quaternion, representing no rotation.
     #[classattr]
     pub const IDENTITY: Self = Self {
         inner: glam::DQuat::IDENTITY,
     };
 
-    /// Creates a quaternion that rotates `angle` degrees around the x axis.
+    /// Create a quaternion rotating `angle` degrees about the x axis.
     #[staticmethod]
     pub fn from_rotation_x(angle: f64) -> PyResult<Self> {
         if !angle.is_finite() {
@@ -144,7 +138,7 @@ impl Quat {
         })
     }
 
-    /// Creates a quaternion that rotates `angle` degrees around the y axis.
+    /// Create a quaternion rotating `angle` degrees about the y axis.
     #[staticmethod]
     pub fn from_rotation_y(angle: f64) -> PyResult<Self> {
         if !angle.is_finite() {
@@ -155,7 +149,7 @@ impl Quat {
         })
     }
 
-    /// Creates a quaternion that rotates `angle` degrees around the z axis.
+    /// Create a quaternion rotating `angle` degrees about the z axis.
     #[staticmethod]
     pub fn from_rotation_z(angle: f64) -> PyResult<Self> {
         if !angle.is_finite() {
@@ -166,8 +160,9 @@ impl Quat {
         })
     }
 
-    /// Creates a quaternion that rotates `angle` degrees around `axis`.
-    /// `axis` does not need to be normalized.
+    /// Create a quaternion rotating `angle` degrees about `axis`.
+    ///
+    /// `axis` need not be normalized.
     #[staticmethod]
     pub fn from_axis_angle(axis: Vec3, angle: f64) -> PyResult<Self> {
         if !angle.is_finite() {
@@ -178,14 +173,14 @@ impl Quat {
         })
     }
 
-    /// Gives the conjugate of `self`, equivalent to the inverse rotation.
+    /// Return the conjugate of `self`, which is the inverse rotation.
     pub fn conjugate(&self) -> Self {
         Self {
             inner: self.inner.conjugate(),
         }
     }
 
-    /// Quaternion product, `other` must be a `Quat`.
+    /// Compose `self` with `other`, another `Quat`, applying `other` first.
     pub fn __mul__(&self, other: Self) -> Self {
         Self {
             inner: self.inner * other.inner,

@@ -8,6 +8,7 @@ use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
 use crate::tools::render;
 
+/// The size of a model's voxel grid along each axis.
 #[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Dimensions {
@@ -30,6 +31,7 @@ impl Dimensions {
 
 #[pymethods]
 impl Dimensions {
+    /// Create dimensions of `x` by `y` by `z` voxels, each from 1 to 256.
     #[new]
     fn new(x: usize, y: usize, z: usize) -> PyResult<Self> {
         if !(1..=256).contains(&x) {
@@ -44,15 +46,22 @@ impl Dimensions {
         Ok(Self { x, y, z })
     }
 
+    /// Return whether `a` is a valid voxel coordinate within these dimensions.
     fn contains(&self, a: Int3) -> bool {
         a.x < self.x && a.y < self.y && a.z < self.z
     }
 
+    /// Return these dimensions as a `Vec3`.
     fn as_vec(&self) -> Vec3 {
         Int3::new(self.x, self.y, self.z).into()
     }
 }
 
+/// Which point of a model's voxel grid to place at its node's origin once in a scene.
+///
+/// `Corner` uses the grid's `(0, 0, 0)` corner; `Center` uses its center; `BottomCenter` uses
+/// the center of its base. For an arbitrary point, pass a `Vec3` in grid coordinates (voxels,
+/// one per unit) instead of a `Pivot`.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub enum Pivot {
@@ -61,6 +70,11 @@ pub enum Pivot {
     BottomCenter,
 }
 
+/// A 3D grid of voxels, each empty or set to one material of the model's palette.
+///
+/// Voxel coordinates are `(x, y, z)` tuples indexing from `(0, 0, 0)`; y is up. Coordinates
+/// outside the grid raise `ValueError`, though spheres and ellipsoids reaching past an edge
+/// are clipped to it.
 #[pyclass]
 pub struct Model {
     #[pyo3(get)]
@@ -153,6 +167,13 @@ impl Model {
 
 #[pymethods]
 impl Model {
+    /// Create an empty model.
+    ///
+    /// Args:
+    ///     dims: The grid's size along each axis.
+    ///     palette: The palette whose materials this model's voxels may use.
+    ///     pivot: Which point of the grid to place at the node's origin — a `Pivot`, or a
+    ///         `Vec3` in grid coordinates (the same voxel space as `put` and `aabb`).
     #[new]
     pub fn new(dims: Dimensions, palette: Py<Palette>, pivot: Either<Pivot, Vec3>) -> Self {
         Self {
@@ -164,6 +185,7 @@ impl Model {
         }
     }
 
+    /// Return an independent copy of the model that shares the same palette.
     pub fn copy(&self, py: Python) -> Self {
         Self {
             dims: self.dims,
@@ -174,6 +196,9 @@ impl Model {
         }
     }
 
+    /// Return a new model holding just the voxels in the box between `p1` and `p2` inclusive.
+    ///
+    /// The new model keeps this model's palette and pivot.
     pub fn clip(&self, p1: Int3, p2: Int3, py: Python) -> PyResult<Self> {
         self.check_contains(p1)?;
         self.check_contains(p2)?;
@@ -187,18 +212,22 @@ impl Model {
         Ok(clipped)
     }
 
+    /// Mirror the model in place across the x axis.
     pub fn flip_x(&mut self) {
         self.flip_axis(1, self.dims.x);
     }
 
+    /// Mirror the model in place across the y axis.
     pub fn flip_y(&mut self) {
         self.flip_axis(self.dims.x, self.dims.y);
     }
 
+    /// Mirror the model in place across the z axis.
     pub fn flip_z(&mut self) {
         self.flip_axis(self.zstride, self.dims.z);
     }
 
+    /// Set the voxel at `p`, or clear it when `material` is `None`.
     pub fn put(&mut self, material: Option<&Material>, p: Int3) -> PyResult<()> {
         self.check_contains(p)?;
         let code = self.get_material_code(material)?;
@@ -206,6 +235,9 @@ impl Model {
         Ok(())
     }
 
+    /// Fill the axis-aligned box between corners `p1` and `p2` inclusive.
+    ///
+    /// A `material` of `None` clears the box instead.
     pub fn aabb(&mut self, material: Option<&Material>, p1: Int3, p2: Int3) -> PyResult<()> {
         self.check_contains(p1)?;
         self.check_contains(p2)?;
@@ -216,18 +248,31 @@ impl Model {
         Ok(())
     }
 
+    /// Fill a sphere of radius `r`, in voxels, centered on `c`.
+    ///
+    /// A `material` of `None` clears the sphere instead.
     pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
         self.fill_ellipsoid(material, c, Int3::new(r, r, r))
     }
 
+    /// Fill a spheroid centered on `c`, with horizontal radius `r_eq` and vertical radius `r_polar`.
+    ///
+    /// A `material` of `None` clears the spheroid instead.
     pub fn spheroid(&mut self, material: Option<&Material>, c: Int3, r_eq: usize, r_polar: usize) -> PyResult<()> {
         self.fill_ellipsoid(material, c, Int3::new(r_eq, r_polar, r_eq))
     }
 
+    /// Fill an ellipsoid centered on `c`, with radii `rx`, `ry` and `rz` along each axis.
+    ///
+    /// A `material` of `None` clears the ellipsoid instead.
     pub fn ellipsoid(&mut self, material: Option<&Material>, c: Int3, rx: usize, ry: usize, rz: usize) -> PyResult<()> {
         self.fill_ellipsoid(material, c, Int3::new(rx, ry, rz))
     }
 
+    /// Stamp every set voxel of `other` into this model, shifted by `offset`.
+    ///
+    /// Both models must share the same palette. Empty voxels in `other` leave this model
+    /// unchanged; `other` must fit entirely within bounds once shifted.
     pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
         self.check_contains(other.dims.last_index() + offset)?;
         if !other.palette.is(&self.palette) {
@@ -243,6 +288,9 @@ impl Model {
         Ok(())
     }
 
+    /// Render the model on its own from each camera angle and return the image files.
+    ///
+    /// A shortcut for wrapping the model in a one-node scene; see `Scene.render`.
     pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
         let scene = Bound::new(slf.py(), Scene::default())?;
         let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;

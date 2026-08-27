@@ -12,6 +12,9 @@ use crate::render::{CameraAngle, RenderOutput};
 use crate::tools::{export_glb, render};
 use crate::utils::Dict;
 
+/// A tree of nodes, the models attached to them, and any named animations.
+///
+/// Node, mesh and animation names must each be unique within the scene.
 #[pyclass]
 #[derive(Default)]
 pub struct Scene {
@@ -37,11 +40,17 @@ impl Scene {
 
 #[pymethods]
 impl Scene {
+    /// Create an empty scene.
     #[new]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Create a top-level node.
+    ///
+    /// Args:
+    ///     name: A scene-unique name, also used for the node in exports.
+    ///     extras: Arbitrary string key/value pairs attached to the node in glTF exports.
     #[pyo3(signature = (name, *, extras = None))]
     pub fn create_root_node(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Node>> {
         Self::add_node(
@@ -58,6 +67,11 @@ impl Scene {
         )
     }
 
+    /// Create an empty animation.
+    ///
+    /// Args:
+    ///     name: A scene-unique name for the animation.
+    ///     extras: Arbitrary string key/value pairs attached to the animation in glTF exports.
     #[pyo3(signature = (name, *, extras = None))]
     pub fn create_anim(slf: Bound<Self>, name: String, extras: Option<Dict>) -> PyResult<Py<Anim>> {
         let mut slf_brw = slf.borrow_mut();
@@ -79,12 +93,28 @@ impl Scene {
         Ok(anim)
     }
 
+    /// Export the scene to a binary glTF (`.glb`) file at `path`.
     pub fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
         let blob = export_glb(slf)?;
         write(path, blob)?;
         Ok(())
     }
 
+    /// Render the scene from each camera angle and return the image files.
+    ///
+    /// Args:
+    ///     angles: Camera positions to render from; must be non-empty.
+    ///     times: Times, in seconds, to sample `animation` at, one render per time. Ignored
+    ///         unless `animation` is given.
+    ///     animation: Name of the animation to pose the scene with before rendering.
+    ///     include: If given, only nodes and meshes whose names appear here are visible.
+    ///     exclude: Names of nodes and meshes to hide.
+    ///
+    /// Returns:
+    ///     The written PNG files, one per time and angle.
+    ///
+    /// Raises:
+    ///     ValueError: If `angles` is empty or `animation` names no animation on the scene.
     #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None))]
     pub fn render(
         slf: Bound<Self>,
@@ -110,6 +140,10 @@ impl Scene {
     }
 }
 
+/// A transform node in a scene's tree.
+///
+/// A node's translation, rotation and scale are relative to its parent and apply to its
+/// descendants and any attached meshes. Each is `None` when left at its default.
 #[pyclass(get_all, frozen)]
 pub struct Node {
     pub name: String,
@@ -123,6 +157,14 @@ pub struct Node {
 
 #[pymethods]
 impl Node {
+    /// Create a child of this node.
+    ///
+    /// Args:
+    ///     name: A scene-unique name for the child.
+    ///     translation: Offset from the parent, in voxels.
+    ///     rotation: Rotation relative to the parent.
+    ///     scale: Per-axis scale relative to the parent.
+    ///     extras: Arbitrary string key/value pairs attached to the node in glTF exports.
     #[pyo3(signature = (name, *, translation = None, rotation = None, scale = None, extras = None))]
     pub fn create_child_node(
         slf: Bound<Self>,
@@ -147,6 +189,12 @@ impl Node {
         )
     }
 
+    /// Attach `model` to this node as a named mesh and return it.
+    ///
+    /// Args:
+    ///     name: A scene-unique mesh name.
+    ///     model: The model to attach.
+    ///     extras: Arbitrary string key/value pairs attached to the mesh in glTF exports.
     #[pyo3(signature = (name, model, *, extras = None))]
     pub fn add_model(slf: Bound<Self>, name: String, model: Py<Model>, extras: Option<Dict>) -> PyResult<Py<Mesh>> {
         let mut scene = slf.get().scene.borrow_mut(slf.py());
@@ -174,6 +222,7 @@ impl Node {
     }
 }
 
+/// A model attached to a node, created by `Node.add_model`.
 #[pyclass(get_all, frozen)]
 pub struct Mesh {
     pub name: String,

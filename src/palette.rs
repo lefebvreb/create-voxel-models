@@ -3,6 +3,7 @@ use std::num::NonZeroU8;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 
+/// An RGB color with 8 bits per channel.
 #[pyclass(from_py_object, frozen, get_all)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Color {
@@ -13,7 +14,7 @@ pub struct Color {
 
 #[pymethods]
 impl Color {
-    /// Creates a new color with its red, green and blue components. Each channel takes values from 0 to 255 inclusive.
+    /// Create a color from its red, green and blue channels, each from 0 to 255.
     #[new]
     pub fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
@@ -34,6 +35,7 @@ impl MaterialCode {
     }
 }
 
+/// A PBR material held by a `Palette`. Create one with `Palette.add_material`.
 #[pyclass(frozen)]
 pub struct Material {
     pub code: MaterialCode,
@@ -62,6 +64,7 @@ impl Material {
     }
 }
 
+/// Volumetric light attenuation for a transmissive material, giving colored glass its tint.
 #[pyclass(get_all, from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Volume {
@@ -72,6 +75,13 @@ pub struct Volume {
 
 #[pymethods]
 impl Volume {
+    /// Define how transmitted light is absorbed inside a material.
+    ///
+    /// Args:
+    ///     color: The color light is attenuated toward as it travels through the volume.
+    ///     distance: Distance, in voxels, over which light is attenuated to `color`. Must be
+    ///         positive.
+    ///     thickness: Thickness, in voxels, of the material's walls.
     #[new]
     #[pyo3(signature = (color, distance, *, thickness = 1.0))]
     pub fn new(color: Color, distance: f64, thickness: f64) -> PyResult<Self> {
@@ -89,6 +99,7 @@ impl Volume {
     }
 }
 
+/// An ordered set of up to 255 materials, shared between the models that use them.
 #[pyclass]
 #[derive(Default)]
 pub struct Palette {
@@ -97,12 +108,27 @@ pub struct Palette {
 
 #[pymethods]
 impl Palette {
-    /// Creates a new, empty palette.
+    /// Create an empty palette.
     #[new]
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a material to the palette and return it.
+    ///
+    /// Args:
+    ///     color: The material's base color.
+    ///     roughness: Surface roughness, from 0.0 (mirror-smooth) to 1.0 (fully matte).
+    ///     metallic: 0.0 for a dielectric, 1.0 for a metal.
+    ///     ior: Index of refraction; either 0.0 or at least 1.0. Only affects transmissive
+    ///         materials.
+    ///     transmission: Fraction of light passing through the surface, from 0.0 (opaque) to
+    ///         1.0 (fully transmissive).
+    ///     emissive: Emitted light strength; 0.0 for a non-emitter, larger values glow brighter.
+    ///     volume: Volumetric attenuation applied to transmitted light, if any.
+    ///
+    /// Raises:
+    ///     ValueError: If an argument is out of range, or the palette already holds 255 materials.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (color, *, roughness = 1.0, metallic = 0.0, ior = 1.5, transmission = 0.0, emissive = 0.0, volume = None))]
     pub fn add_material(
@@ -159,7 +185,7 @@ impl Palette {
         Ok(material)
     }
 
-    /// Returns the number of colors in this palette. 255 is the maximum allowed.
+    /// Return the number of materials in the palette.
     pub fn __len__(&self) -> usize {
         self.materials.len()
     }

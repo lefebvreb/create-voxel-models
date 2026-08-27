@@ -7,6 +7,7 @@ use crate::math::{Quat, Vec3};
 use crate::scene::{Node, Scene};
 use crate::utils::{Dict, HashPy};
 
+/// A named animation, holding per-node keyframe tracks for translation, rotation and scale.
 #[pyclass]
 pub struct Anim {
     #[pyo3(get)]
@@ -31,6 +32,17 @@ impl Anim {
 
 #[pymethods]
 impl Anim {
+    /// Set `node`'s translation track, replacing any existing one.
+    ///
+    /// Args:
+    ///     node: The node to animate; it must belong to this animation's scene.
+    ///     input: Keyframe times, in seconds, in ascending order.
+    ///     output: The translation at each keyframe — or, with cubic-spline interpolation, an
+    ///         in-tangent, value and out-tangent for each.
+    ///     interpolation: How values between keyframes are interpolated; linear when omitted.
+    ///
+    /// Raises:
+    ///     ValueError: If `node` is from another scene, or `output` has the wrong length.
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
     pub fn add_translation(
         slf: Bound<Self>,
@@ -43,6 +55,17 @@ impl Anim {
         Self::with_node_trs(slf, node, |trs| trs.translation = Some(channel))
     }
 
+    /// Set `node`'s rotation track, replacing any existing one.
+    ///
+    /// Args:
+    ///     node: The node to animate; it must belong to this animation's scene.
+    ///     input: Keyframe times, in seconds, in ascending order.
+    ///     output: The rotation at each keyframe — or, with cubic-spline interpolation, an
+    ///         in-tangent, value and out-tangent for each.
+    ///     interpolation: How values between keyframes are interpolated; linear when omitted.
+    ///
+    /// Raises:
+    ///     ValueError: If `node` is from another scene, or `output` has the wrong length.
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
     pub fn add_rotation(
         slf: Bound<Self>,
@@ -55,6 +78,17 @@ impl Anim {
         Self::with_node_trs(slf, node, |trs| trs.rotation = Some(channel))
     }
 
+    /// Set `node`'s scale track, replacing any existing one.
+    ///
+    /// Args:
+    ///     node: The node to animate; it must belong to this animation's scene.
+    ///     input: Keyframe times, in seconds, in ascending order.
+    ///     output: The per-axis scale at each keyframe — or, with cubic-spline interpolation,
+    ///         an in-tangent, value and out-tangent for each.
+    ///     interpolation: How values between keyframes are interpolated; linear when omitted.
+    ///
+    /// Raises:
+    ///     ValueError: If `node` is from another scene, or `output` has the wrong length.
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
     pub fn add_scale(
         slf: Bound<Self>,
@@ -73,6 +107,11 @@ impl Anim {
     }
 }
 
+/// How an animation track interpolates between keyframes.
+///
+/// `Linear` blends between neighboring keyframes (spherically, for rotations); `Step` holds
+/// each keyframe until the next; `CubicSpline` uses Hermite splines and needs three output
+/// values per keyframe.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub enum Interpolation {
