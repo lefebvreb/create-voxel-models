@@ -117,7 +117,7 @@ impl Model {
     fn fill_ellipsoid(&mut self, material: Option<&Material>, center: Int3, radii: Int3) -> PyResult<()> {
         self.check_contains(center)?;
         let code = self.get_material_code(material)?;
-        if radii.contains_zero() {
+        if radii.any(|r| r == 0) {
             return Err(PyValueError::new_err("radius must be at least 1"));
         }
         let r = Vec3::from(radii);

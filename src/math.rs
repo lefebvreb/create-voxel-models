@@ -210,8 +210,8 @@ impl Int3 {
         Self { x, y, z }
     }
 
-    pub fn contains_zero(self) -> bool {
-        self.x == 0 || self.y == 0 || self.z == 0
+    pub fn any(self, f: impl FnMut(usize) -> bool) -> bool {
+        [self.x, self.y, self.z].into_iter().any(f)
     }
 
     pub fn min(self, other: Self) -> Self {
