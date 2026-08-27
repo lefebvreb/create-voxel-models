@@ -16,6 +16,16 @@ pub struct Dimensions {
     pub z: usize,
 }
 
+impl Dimensions {
+    fn last_index(&self) -> Int3 {
+        (self.x - 1, self.y - 1, self.z - 1)
+    }
+
+    fn from_extent((x, y, z): Int3) -> Self {
+        Self { x, y, z }
+    }
+}
+
 #[pymethods]
 impl Dimensions {
     #[new]
@@ -39,16 +49,6 @@ impl Dimensions {
 
     fn as_vec(&self) -> Vec3 {
         int3::into_vec3((self.x, self.y, self.z))
-    }
-}
-
-impl Dimensions {
-    fn last_index(&self) -> Int3 {
-        (self.x - 1, self.y - 1, self.z - 1)
-    }
-
-    fn from_extent((x, y, z): Int3) -> Self {
-        Self { x, y, z }
     }
 }
 
@@ -215,6 +215,8 @@ impl Model {
         }
         Ok(())
     }
+
+    pub fn __test(&self, a: crate::math::Int3_2) {}
 
     pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
         self.fill_ellipsoid(material, c, (r, r, r))

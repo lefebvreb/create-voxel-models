@@ -17,7 +17,7 @@ use bevy::pbr::StandardMaterial;
 use bevy::prelude::*;
 use bevy::render::RenderPlugin;
 use bevy::render::render_resource::{
-    Extent3d, PollType, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, TextureViewDimension,
+    Extent3d, PollType, TextureDimension, TextureFormat, TextureUsages, TextureViewDescriptor, TextureViewDimension
 };
 use bevy::render::renderer::RenderDevice;
 use bevy::render::view::screenshot::{Screenshot, ScreenshotCaptured};

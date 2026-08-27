@@ -1,7 +1,8 @@
 use std::f64::consts::PI;
 
 use pyo3::exceptions::PyValueError;
-use pyo3::{PyResult, pyclass, pymethods};
+use pyo3::inspect::PyStaticExpr;
+use pyo3::{Borrowed, FromPyObject, PyAny, PyResult, pyclass, pymethods};
 
 /// A 3-dimensional real column vector, with double precision components.
 #[pyclass(from_py_object, frozen)]
@@ -184,6 +185,22 @@ impl Quat {
 
 pub fn deg_to_rad(a: f64) -> f64 {
     a * (PI / 180.0)
+}
+
+pub struct Int3_2 {
+    pub x: usize,
+    pub y: usize,
+    pub z: usize,
+}
+
+impl<'a, 'py> FromPyObject<'a, 'py> for Int3_2 {
+    type Error = <(usize, usize, usize) as FromPyObject<'a, 'py>>::Error;
+
+    const INPUT_TYPE: PyStaticExpr = <(usize, usize, usize) as FromPyObject<'a, 'py>>::INPUT_TYPE;
+
+    fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
+        obj.extract::<(usize, usize, usize)>().map(|(x, y, z)| Self { x, y, z })
+    }
 }
 
 pub type Int3 = (usize, usize, usize);
