@@ -194,7 +194,7 @@ pub fn deg_to_rad(a: f64) -> f64 {
     a * (PI / 180.0)
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Int3 {
     pub x: usize,
     pub y: usize,
@@ -223,7 +223,11 @@ impl Int3 {
     }
 
     pub fn saturating_sub(self, rhs: Self) -> Self {
-        Self::new(self.x.saturating_sub(rhs.x), self.y.saturating_sub(rhs.y), self.z.saturating_sub(rhs.z))
+        Self::new(
+            self.x.saturating_sub(rhs.x),
+            self.y.saturating_sub(rhs.y),
+            self.z.saturating_sub(rhs.z),
+        )
     }
 }
 
@@ -249,43 +253,7 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Int3 {
     const INPUT_TYPE: PyStaticExpr = <(usize, usize, usize) as FromPyObject<'a, 'py>>::INPUT_TYPE;
 
     fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
-        obj.extract::<(usize, usize, usize)>().map(|(x, y, z)| Self::new(x, y, z))
+        obj.extract::<(usize, usize, usize)>()
+            .map(|(x, y, z)| Self::new(x, y, z))
     }
 }
-
-// pub type Int3 = (usize, usize, usize);
-
-// pub mod int3 {
-//     use super::{Int3, Vec3};
-
-//     pub const ZERO: Int3 = (0, 0, 0);
-//     pub const ONE: Int3 = (1, 1, 1);
-
-//     pub fn contains_zero((x, y, z): Int3) -> bool {
-//         x == 0 || y == 0 || z == 0
-//     }
-
-//     pub fn min((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-//         (ax.min(bx), ay.min(by), az.min(bz))
-//     }
-
-//     pub fn max((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-//         (ax.max(bx), ay.max(by), az.max(bz))
-//     }
-
-//     pub fn add((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-//         (ax + bx, ay + by, az + bz)
-//     }
-
-//     pub fn sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-//         (ax - bx, ay - by, az - bz)
-//     }
-
-//     pub fn saturating_sub((ax, ay, az): Int3, (bx, by, bz): Int3) -> Int3 {
-//         (ax.saturating_sub(bx), ay.saturating_sub(by), az.saturating_sub(bz))
-//     }
-
-//     pub fn into_vec3((x, y, z): Int3) -> Vec3 {
-//         Vec3::new_unchecked(x as f64, y as f64, z as f64)
-//     }
-// }

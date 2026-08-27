@@ -2,7 +2,7 @@ use either::Either;
 use pyo3::exceptions::PyValueError;
 use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
 
-use crate::math::{Int3, Vec3, int3};
+use crate::math::{Int3, Vec3};
 use crate::palette::{Material, MaterialCode, Palette};
 use crate::render::{CameraAngle, RenderOutput};
 use crate::scene::{Node, Scene};
@@ -18,10 +18,10 @@ pub struct Dimensions {
 
 impl Dimensions {
     fn last_index(&self) -> Int3 {
-        (self.x - 1, self.y - 1, self.z - 1)
+        Int3::new(self.x - 1, self.y - 1, self.z - 1)
     }
 
-    fn from_extent((x, y, z): Int3) -> Self {
+    fn from_extent(Int3 { x, y, z }: Int3) -> Self {
         Self { x, y, z }
     }
 }
@@ -43,12 +43,11 @@ impl Dimensions {
     }
 
     fn contains(&self, a: Int3) -> bool {
-        let (x, y, z) = a;
-        x < self.x && y < self.y && z < self.z
+        a.x < self.x && a.y < self.y && a.z < self.z
     }
 
     fn as_vec(&self) -> Vec3 {
-        int3::into_vec3((self.x, self.y, self.z))
+        Int3::new(self.x, self.y, self.z).into()
     }
 }
 
@@ -93,8 +92,7 @@ impl Model {
     }
 
     fn index(&self, pos: Int3) -> usize {
-        let (x, y, z) = pos;
-        x + y * self.dims.x + z * self.zstride
+        pos.x + pos.y * self.dims.x + pos.z * self.zstride
     }
 
     pub fn pivot_offset(&self) -> Vec3 {
@@ -119,14 +117,14 @@ impl Model {
     fn fill_ellipsoid(&mut self, material: Option<&Material>, center: Int3, radii: Int3) -> PyResult<()> {
         self.check_contains(center)?;
         let code = self.get_material_code(material)?;
-        if int3::contains_zero(radii) {
+        if radii.contains_zero() {
             return Err(PyValueError::new_err("radius must be at least 1"));
         }
-        let r = int3::into_vec3(radii);
-        let lo = int3::saturating_sub(center, radii);
-        let hi = int3::min(int3::add(center, radii), self.dims.last_index());
+        let r = Vec3::from(radii);
+        let lo = center.saturating_sub(radii);
+        let hi = (center + radii).min(self.dims.last_index());
         for pos in box_positions(lo, hi) {
-            let delta = int3::into_vec3(pos).__sub__(int3::into_vec3(center));
+            let delta = Vec3::from(pos).__sub__(center.into());
             let nx = delta.x() / r.x();
             let ny = delta.y() / r.y();
             let nz = delta.z() / r.z();
@@ -177,12 +175,12 @@ impl Model {
     pub fn clip(&self, p1: Int3, p2: Int3, py: Python) -> PyResult<Self> {
         self.check_contains(p1)?;
         self.check_contains(p2)?;
-        let lo = int3::min(p1, p2);
-        let hi = int3::max(p1, p2);
-        let dims = Dimensions::from_extent(int3::add(int3::sub(hi, lo), int3::ONE));
+        let lo = p1.min(p2);
+        let hi = p1.max(p2);
+        let dims = Dimensions::from_extent(hi - lo + Int3::ONE);
         let mut clipped = Self::new(dims, self.palette.clone_ref(py), self.pivot);
         for pos in box_positions(lo, hi) {
-            clipped.set(int3::sub(pos, lo), self.get(pos));
+            clipped.set(pos - lo, self.get(pos));
         }
         Ok(clipped)
     }
@@ -217,27 +215,27 @@ impl Model {
     }
 
     pub fn sphere(&mut self, material: Option<&Material>, c: Int3, r: usize) -> PyResult<()> {
-        self.fill_ellipsoid(material, c, (r, r, r))
+        self.fill_ellipsoid(material, c, Int3::new(r, r, r))
     }
 
     pub fn spheroid(&mut self, material: Option<&Material>, c: Int3, r_eq: usize, r_polar: usize) -> PyResult<()> {
-        self.fill_ellipsoid(material, c, (r_eq, r_polar, r_eq))
+        self.fill_ellipsoid(material, c, Int3::new(r_eq, r_polar, r_eq))
     }
 
     pub fn ellipsoid(&mut self, material: Option<&Material>, c: Int3, rx: usize, ry: usize, rz: usize) -> PyResult<()> {
-        self.fill_ellipsoid(material, c, (rx, ry, rz))
+        self.fill_ellipsoid(material, c, Int3::new(rx, ry, rz))
     }
 
     pub fn include(&mut self, other: &Model, offset: Int3) -> PyResult<()> {
-        self.check_contains(int3::add(other.dims.last_index(), offset))?;
+        self.check_contains(other.dims.last_index() + offset)?;
         if !other.palette.is(&self.palette) {
             return Err(PyValueError::new_err(
                 "self and other have different palettes, which isn't allowed",
             ));
         }
-        for local in box_positions(int3::ZERO, other.dims.last_index()) {
+        for local in box_positions(Int3::ZERO, other.dims.last_index()) {
             if let code @ Some(_) = other.get(local) {
-                self.set(int3::add(offset, local), code)
+                self.set(offset + local, code)
             }
         }
         Ok(())
@@ -252,7 +250,7 @@ impl Model {
 }
 
 fn box_positions(a: Int3, b: Int3) -> impl Iterator<Item = Int3> {
-    let (xmin, ymin, zmin) = int3::min(a, b);
-    let (xmax, ymax, zmax) = int3::max(a, b);
-    (zmin..=zmax).flat_map(move |z| (ymin..=ymax).flat_map(move |y| (xmin..=xmax).map(move |x| (x, y, z))))
+    let lo = a.min(b);
+    let hi = a.max(b);
+    (lo.z..=hi.z).flat_map(move |z| (lo.y..=hi.y).flat_map(move |y| (lo.x..=hi.x).map(move |x| Int3::new(x, y, z))))
 }

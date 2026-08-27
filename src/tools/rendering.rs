@@ -467,7 +467,7 @@ fn specular_probe_cubemap(images: &mut Assets<Image>) -> Handle<Image> {
     for (light, dark) in FACES {
         for y in 0..SPECULAR_PROBE_SIZE {
             for x in 0..SPECULAR_PROBE_SIZE {
-                let checker = (x / SPECULAR_PROBE_BLOCK + y / SPECULAR_PROBE_BLOCK) % 2 == 0;
+                let checker = (x / SPECULAR_PROBE_BLOCK + y / SPECULAR_PROBE_BLOCK).is_multiple_of(2);
                 let value = if checker { light } else { dark };
                 data.extend_from_slice(&[value, value, value, 255]);
             }
