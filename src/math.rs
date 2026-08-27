@@ -118,7 +118,7 @@ impl From<Int3> for Vec3 {
     }
 }
 
-/// A quaternion, with double precisions components.
+/// A unit quaternion, with double precisions components.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
 pub struct Quat {
@@ -178,6 +178,7 @@ impl Quat {
         })
     }
 
+    /// Gives the conjugate of `self`, equivalent to the inverse rotation.
     pub fn conjugate(&self) -> Self {
         Self {
             inner: self.inner.conjugate(),

@@ -13,6 +13,7 @@ pub struct Color {
 
 #[pymethods]
 impl Color {
+    /// Creates a new color with its red, green and blue components. Each channel takes values from 0 to 255 inclusive.
     #[new]
     pub fn new(r: u8, g: u8, b: u8) -> Self {
         Self { r, g, b }
@@ -96,6 +97,7 @@ pub struct Palette {
 
 #[pymethods]
 impl Palette {
+    /// Creates a new, empty palette.
     #[new]
     pub fn new() -> Self {
         Self::default()
@@ -157,6 +159,7 @@ impl Palette {
         Ok(material)
     }
 
+    /// Returns the number of colors in this palette. 255 is the maximum allowed.
     pub fn __len__(&self) -> usize {
         self.materials.len()
     }

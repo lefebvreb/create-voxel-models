@@ -27,7 +27,10 @@ class CameraAngle:
 
 @final
 class Color:
-    def __new__(cls, /, r: int, g: int, b: int) -> Color: ...
+    def __new__(cls, /, r: int, g: int, b: int) -> Color:
+        """
+        Creates a new color with its red, green and blue components. Each channel takes values from 0 to 255 inclusive.
+        """
     @property
     def b(self, /) -> int: ...
     @property
@@ -128,8 +131,14 @@ class Node:
 
 @final
 class Palette:
-    def __len__(self, /) -> int: ...
-    def __new__(cls, /) -> Palette: ...
+    def __len__(self, /) -> int:
+        """
+        Returns the number of colors in this palette. 255 is the maximum allowed.
+        """
+    def __new__(cls, /) -> Palette:
+        """
+        Creates a new, empty palette.
+        """
     def add_material(self, /, color: Color, *, roughness: float = 1.0, metallic: float = 0.0, ior: float = 1.5, transmission: float = 0.0, emissive: float = 0.0, volume: Volume |None = None) -> Material: ...
 
 @final
@@ -143,7 +152,7 @@ class Pivot:
 @final
 class Quat:
     """
-    A quaternion, with double precisions components.
+    A unit quaternion, with double precisions components.
     """
     IDENTITY: Final[Quat]
     """
@@ -153,7 +162,10 @@ class Quat:
         """
         Quaternion product, `other` must be a `Quat`.
         """
-    def conjugate(self, /) -> Quat: ...
+    def conjugate(self, /) -> Quat:
+        """
+        Gives the conjugate of `self`, equivalent to the inverse rotation.
+        """
     @staticmethod
     def from_axis_angle(axis: Vec3, angle: float) -> Quat:
         """
