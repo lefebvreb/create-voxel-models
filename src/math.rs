@@ -5,6 +5,8 @@ use pyo3::exceptions::PyValueError;
 use pyo3::inspect::PyStaticExpr;
 use pyo3::{Borrowed, FromPyObject, PyAny, PyResult, pyclass, pymethods};
 
+use crate::model::Dimensions;
+
 /// A 3-dimensional real column vector, with double precision components.
 #[pyclass(from_py_object, frozen)]
 #[derive(Copy, Clone)]
@@ -111,8 +113,8 @@ impl Vec3 {
 }
 
 impl From<Int3> for Vec3 {
-    fn from(value: Int3) -> Self {
-        Self::new_unchecked(value.x as f64, value.y as f64, value.z as f64)
+    fn from(Int3 { x, y, z }: Int3) -> Self {
+        Self::new_unchecked(x as f64, y as f64, z as f64)
     }
 }
 
@@ -244,6 +246,12 @@ impl Sub for Int3 {
 
     fn sub(self, rhs: Self) -> Self::Output {
         Self::new(self.x - rhs.x, self.y - rhs.y, self.z - rhs.z)
+    }
+}
+
+impl From<Dimensions> for Int3 {
+    fn from(Dimensions { x, y, z }: Dimensions) -> Self {
+        Self { x, y, z }
     }
 }
 

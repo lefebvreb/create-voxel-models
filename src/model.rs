@@ -16,13 +16,15 @@ pub struct Dimensions {
     pub z: usize,
 }
 
-impl Dimensions {
-    fn last_index(&self) -> Int3 {
-        Int3::new(self.x - 1, self.y - 1, self.z - 1)
-    }
-
-    fn from_extent(Int3 { x, y, z }: Int3) -> Self {
+impl From<Int3> for Dimensions {
+    fn from(Int3 { x, y, z }: Int3) -> Self {
         Self { x, y, z }
+    }
+}
+
+impl Dimensions {
+    fn last_index(self) -> Int3 {
+        Int3::from(self) - Int3::ONE
     }
 }
 
@@ -177,7 +179,7 @@ impl Model {
         self.check_contains(p2)?;
         let lo = p1.min(p2);
         let hi = p1.max(p2);
-        let dims = Dimensions::from_extent(hi - lo + Int3::ONE);
+        let dims = Dimensions::from(hi - lo + Int3::ONE);
         let mut clipped = Self::new(dims, self.palette.clone_ref(py), self.pivot);
         for pos in box_positions(lo, hi) {
             clipped.set(pos - lo, self.get(pos));
