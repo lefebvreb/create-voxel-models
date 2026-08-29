@@ -631,6 +631,7 @@ fn pad(data: &[u8], fill: u8) -> Vec<u8> {
 /// `serde_json` tolerates as whitespace) and its BIN chunk (still padded with trailing zero
 /// bytes, harmless since accessors only ever read their own declared `byteOffset`/`byteLength`
 /// range - never the padding beyond it).
+#[allow(dead_code)] // only `read_glb` calls this so far; see its own doc comment
 fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     if data.len() < 12 {
         return Err("not a GLB file: shorter than the 12-byte header".to_string());
@@ -655,6 +656,7 @@ fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     Ok((json, bin))
 }
 
+#[allow(dead_code)] // only `read_glb_container` calls this so far; see `read_glb`'s doc comment
 fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), String> {
     if data.len() < 8 {
         return Err("truncated GLB chunk header".to_string());
@@ -677,15 +679,96 @@ fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), Str
 /// Parses a GLB file's bytes into its glTF document and binary buffer. The inverse of
 /// `export_glb` + `write_glb_container`, and the entry point for everything downstream (node
 /// traversal, meshing, animation) that reads a `.glb` path rather than an in-memory `Scene`.
-///
-/// Not called anywhere yet outside this module's own tests: node traversal (the next piece of
-/// the CPU-rasterizer rewrite) is what actually consumes it. Left `#[allow(dead_code)]` rather
-/// than landing unused-and-unreachable, so this step is independently reviewable/testable.
-#[allow(dead_code)]
+#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
 pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>), String> {
     let (json, bin) = read_glb_container(data)?;
     let root: gltf::Root = serde_json::from_slice(json).map_err(|e| format!("invalid glTF JSON: {e}"))?;
     Ok((root, bin.to_vec()))
+}
+
+// --- Accessor decoding: bytes -> typed arrays, the inverse of `BinWriter`'s `write_*` methods ---
+//
+// `Err`, not a panic: an out-of-range accessor/bufferView index or a byte range that doesn't fit
+// the buffer means the *input GLB* is malformed (possibly a corrupt or hand-edited third-party
+// file, not our own writer's output), which is user-input error territory, not a library bug.
+
+fn accessor_bytes<'a>(root: &'a gltf::Root, bin: &'a [u8], accessor_index: u32) -> Result<(&'a gltf::Accessor, &'a [u8]), String> {
+    let accessor = root
+        .accessors
+        .get(accessor_index as usize)
+        .ok_or_else(|| format!("accessor index {accessor_index} is out of range"))?;
+    let view = root
+        .buffer_views
+        .get(accessor.buffer_view as usize)
+        .ok_or_else(|| format!("bufferView index {} is out of range", accessor.buffer_view))?;
+    let start = view.byte_offset as usize;
+    let end = start + view.byte_length as usize;
+    let bytes = bin
+        .get(start..end)
+        .ok_or_else(|| format!("bufferView [{start}, {end}) is out of bounds for a {}-byte buffer", bin.len()))?;
+    Ok((accessor, bytes))
+}
+
+fn components_per_element(type_: &str) -> Result<usize, String> {
+    match type_ {
+        "SCALAR" => Ok(1),
+        "VEC2" => Ok(2),
+        "VEC3" => Ok(3),
+        "VEC4" => Ok(4),
+        other => Err(format!("unsupported accessor type {other:?}")),
+    }
+}
+
+/// Decodes a `COMPONENT_TYPE_FLOAT` accessor into its flat components (e.g. 3 per element for a
+/// VEC3 accessor) - the only component type this exporter ever writes for positions, normals,
+/// uvs and animation tracks.
+pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<f32>, String> {
+    let (accessor, bytes) = accessor_bytes(root, bin, accessor_index)?;
+    if accessor.component_type != gltf::COMPONENT_TYPE_FLOAT {
+        return Err(format!("accessor {accessor_index} is not a float accessor"));
+    }
+    let components = components_per_element(&accessor.type_)?;
+    let expected_len = accessor.count as usize * components * 4;
+    let bytes = bytes
+        .get(..expected_len)
+        .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
+    Ok(bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect())
+}
+
+/// Decodes a `COMPONENT_TYPE_UNSIGNED_INT` SCALAR accessor (mesh indices).
+#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
+pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<u32>, String> {
+    let (accessor, bytes) = accessor_bytes(root, bin, accessor_index)?;
+    if accessor.component_type != gltf::COMPONENT_TYPE_UNSIGNED_INT {
+        return Err(format!("accessor {accessor_index} is not an unsigned-int accessor"));
+    }
+    let expected_len = accessor.count as usize * 4;
+    let bytes = bytes
+        .get(..expected_len)
+        .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
+    Ok(bytes.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect())
+}
+
+/// Decodes a VEC2 float accessor (uvs). Not consumed yet - node traversal/meshing is what reads
+/// uvs; left in now since it's the same shape as its `decode_vec3s`/`decode_vec4s` siblings.
+#[allow(dead_code)]
+pub fn decode_vec2s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 2]>, String> {
+    let flat = decode_floats(root, bin, accessor_index)?;
+    Ok(flat.as_chunks::<2>().0.to_vec())
+}
+
+/// Decodes a VEC3 float accessor (positions, normals, translation/scale animation output).
+#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
+pub fn decode_vec3s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 3]>, String> {
+    let flat = decode_floats(root, bin, accessor_index)?;
+    Ok(flat.as_chunks::<3>().0.to_vec())
+}
+
+/// Decodes a VEC4 float accessor (rotation animation output).
+#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
+pub fn decode_vec4s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 4]>, String> {
+    let flat = decode_floats(root, bin, accessor_index)?;
+    Ok(flat.as_chunks::<4>().0.to_vec())
 }
 
 #[cfg(test)]
@@ -852,5 +935,62 @@ mod tests {
         let out = write_glb_container(b"not json", &[]);
         let err = read_glb(&out).unwrap_err();
         assert!(err.contains("invalid glTF JSON"));
+    }
+
+    #[test]
+    fn decode_vec3s_round_trips_write_positions() {
+        let mut writer = BinWriter::default();
+        let positions = [[0.0, 0.0, 0.0], [1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]];
+        let index = writer.write_positions(&positions);
+        let mut root = gltf::Root::default();
+        root.accessors = writer.accessors;
+        root.buffer_views = writer.buffer_views;
+
+        let decoded = decode_vec3s(&root, &writer.bytes, index).unwrap();
+        assert_eq!(decoded, positions);
+    }
+
+    #[test]
+    fn decode_u32s_round_trips_write_indices() {
+        let mut writer = BinWriter::default();
+        let indices = [0u32, 1, 2, 2, 1, 3];
+        let index = writer.write_indices(&indices);
+        let mut root = gltf::Root::default();
+        root.accessors = writer.accessors;
+        root.buffer_views = writer.buffer_views;
+
+        let decoded = decode_u32s(&root, &writer.bytes, index).unwrap();
+        assert_eq!(decoded, indices);
+    }
+
+    #[test]
+    fn decode_floats_rejects_out_of_range_accessor() {
+        let root = gltf::Root::default();
+        let err = decode_floats(&root, &[], 0).unwrap_err();
+        assert!(err.contains("out of range"));
+    }
+
+    #[test]
+    fn decode_floats_rejects_truncated_buffer() {
+        let mut writer = BinWriter::default();
+        let index = writer.write_positions(&[[0.0, 0.0, 0.0]]);
+        let mut root = gltf::Root::default();
+        root.accessors = writer.accessors;
+        root.buffer_views = writer.buffer_views;
+
+        let err = decode_floats(&root, &writer.bytes[..4], index).unwrap_err();
+        assert!(err.contains("out of bounds"));
+    }
+
+    #[test]
+    fn decode_floats_rejects_wrong_component_type() {
+        let mut writer = BinWriter::default();
+        let index = writer.write_indices(&[0, 1, 2]); // an unsigned-int accessor, not float
+        let mut root = gltf::Root::default();
+        root.accessors = writer.accessors;
+        root.buffer_views = writer.buffer_views;
+
+        let err = decode_floats(&root, &writer.bytes, index).unwrap_err();
+        assert!(err.contains("not a float accessor"));
     }
 }
