@@ -29,7 +29,7 @@ There are a few major concepts:
 
 Finally, `Scene`s can be exported to `.glb` files, and they can be previewed to `.png` under different angles and at different times of an animation to get immediate feedback.
 
-You can get a full reference of what APIs this package offers in the `reference/voxels.pyi` file bundled with this skill.
+You should get a full reference of what APIs this package offers in the `reference/voxels.pyi` file bundled with this skill.
 
 # Usage
 
@@ -146,4 +146,4 @@ If the user asks for it, you can directly put the call to `export` in this file.
 
 ## Previewing
 
-Once you think you are done with a model or a scene, you can render it to `.png`s to preview it. You can write 
+Once you think you are done with a model or a scene, you must render it to `.png`s to preview it. You can write an inline script for this purpose, using `python -c`, `print`ing the resulting `RenderOutput` object and then reading the `.png`s.
