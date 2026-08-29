@@ -10,7 +10,7 @@ metadata:
 
 # Introduction
 
-This skill contains a python package that enables programmatic creation, edition and animation of voxel models, organized in hierarchical scenes. Similar to how the glTF format is structured, but with voxels. Voxels have colors and PBR properties, with up to 255 different materials per model.
+This skill contains a python package that enables programmatic creation, edition and animation of voxel models, organized in hierarchical scenes. Similar to how the glTF format is structured, but with voxels. Voxels have colors and PBR properties, with up to 255 different materials per palettes, one palette per model.
 
 ## Installation
 
@@ -29,7 +29,7 @@ There are a few major concepts:
 
 Finally, `Scene`s can be exported to `.glb` files, and they can be previewed to `.png` under different angles and at different times of an animation to get immediate feedback.
 
-You should get a full reference of what APIs this package offers in the `reference/voxels.pyi` file bundled with this skill.
+You should get a full reference of what APIs this package offers in the `references/voxels.pyi` file bundled with this skill.
 
 # Usage
 
@@ -118,11 +118,13 @@ model.put(metal, (3, 5, 3))
 model.put(metal, (12, 5, 3))
 model.put(metal, (3, 6, 10))
 model.put(metal, (12, 6, 10))
-
-# Rev 1: the seat slab extended beyond the backrest
 ```
 
-Be sure to label each logical block with what they are supposed to code for. You may use control flow constructs (loops, if statements, lists...) to help if needed. Add a short, numbered comment for each revision the user asks you to do on that model.
+Be sure to label each logical block with what they are supposed to code for. You may use control flow constructs (loops, if statements, lists...) to help if needed. Add a short, numbered comment for each revision the user asks you to do on that model, for example:
+
+```python
+# Rev 1: the seat slab extended beyond the backrest
+```
 
 ### Scenes
 
@@ -139,7 +141,7 @@ scene = Scene()
 root = scene.create_root_node("root")
 root.add_model("chair", chair.model)
 
-scene.export("assets/glb/furniture.glb")
+scene.export_glb("assets/glb/furniture.glb")
 ```
 
 If the user asks for it, you can directly put the call to `export` in this file. Here, it is saving the scene as a `.glb` file in their assets folder.

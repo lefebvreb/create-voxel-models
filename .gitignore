@@ -1,4 +1,4 @@
-/.venv/
+/.venv
 /create-voxel-models.zip
-/target/
+/target
 __pycache__
