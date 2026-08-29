@@ -410,7 +410,14 @@ mod tests {
         assert_eq!(parsed.nodes[0].translation, Some([1.0, 2.0, 3.0]));
         assert_eq!(parsed.nodes[0].children, Vec::<u32>::new());
         assert_eq!(
-            parsed.materials[0].extensions.as_ref().unwrap().ior.as_ref().unwrap().ior,
+            parsed.materials[0]
+                .extensions
+                .as_ref()
+                .unwrap()
+                .ior
+                .as_ref()
+                .unwrap()
+                .ior,
             1.33
         );
         assert!(parsed.materials[0].extensions.as_ref().unwrap().transmission.is_none());

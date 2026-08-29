@@ -20,7 +20,7 @@
 
 use glam::Vec3;
 
-use super::gltf;
+use super::super::gltf;
 use super::texture::{Texture, decode_texture};
 
 // --- Tunable brightness - see the module doc comment ---
@@ -50,11 +50,19 @@ pub fn clear_color_linear() -> [f32; 3] {
 const REFLECTION_TONES_SRGB: [u8; 6] = [205, 120, 220, 100, 145, 175];
 
 fn srgb_to_linear(c: f32) -> f32 {
-    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+    if c <= 0.04045 {
+        c / 12.92
+    } else {
+        ((c + 0.055) / 1.055).powf(2.4)
+    }
 }
 
 fn linear_rgb_u8(c: [u8; 3]) -> Vec3 {
-    Vec3::new(srgb_to_linear(c[0] as f32 / 255.0), srgb_to_linear(c[1] as f32 / 255.0), srgb_to_linear(c[2] as f32 / 255.0))
+    Vec3::new(
+        srgb_to_linear(c[0] as f32 / 255.0),
+        srgb_to_linear(c[1] as f32 / 255.0),
+        srgb_to_linear(c[2] as f32 / 255.0),
+    )
 }
 
 fn hemisphere_ambient(normal_y: f32) -> Vec3 {
@@ -157,7 +165,13 @@ pub fn shade_opaque(material: &DecodedMaterial, world_normal: Vec3, view_dir: Ve
 
     let reflected = (-view_dir).reflect(n);
     let reflection = reflection_cue(reflected) * REFLECTION_INTENSITY * (1.0 - roughness * 0.5);
-    let specular_response = reflection.lerp(reflection * base_color, metallic);
+    // Dielectrics (metallic=0) get only a ~4% specular weight - the common "F0=0.04" convention
+    // real-time PBR shaders use for non-metals (a rough dielectric like wood or plastic reflects
+    // its environment weakly, not at full strength) - metals ramp up to the full reflection.
+    // Without this, every dielectric surface got the *same* full-strength neutral highlight added
+    // on top of its diffuse color everywhere, which read as a uniform wash rather than a subtle
+    // sheen - this was the main cause of the "overblown" look, not just the brightness constants.
+    let specular_response = reflection.lerp(reflection * base_color, metallic) * metallic.max(0.04);
 
     let mut color = diffuse_response + specular_response;
     if let Some(emissive) = material.emissive {
@@ -171,7 +185,14 @@ pub fn shade_opaque(material: &DecodedMaterial, world_normal: Vec3, view_dir: Ve
 /// `KHR_materials_transmission`/`KHR_materials_volume`. `view_dir` and `world_normal` drive the
 /// Fresnel term that biases how much of the surface's own reflection shows through at grazing
 /// angles versus straight transmission face-on.
-pub fn blend_transmission(material: &DecodedMaterial, surface_color: Vec3, background: Vec3, world_normal: Vec3, view_dir: Vec3, uv: [f32; 2]) -> Vec3 {
+pub fn blend_transmission(
+    material: &DecodedMaterial,
+    surface_color: Vec3,
+    background: Vec3,
+    world_normal: Vec3,
+    view_dir: Vec3,
+    uv: [f32; 2],
+) -> Vec3 {
     let Some(transmission_texture) = &material.transmission else {
         return surface_color;
     };
@@ -231,7 +252,7 @@ mod tests {
 
     fn dummy_texture() -> Texture {
         // 1x1 opaque texture, built the same way `decode_texture` would from a real PNG.
-        let png = super::super::utils::encode_png(1, 1, &[128, 128, 128], png::ColorType::Rgb);
+        let png = super::super::super::utils::encode_png(1, 1, &[128, 128, 128], png::ColorType::Rgb);
         let mut root = gltf::Root::default();
         root.buffer_views.push(gltf::BufferView {
             buffer: 0,

@@ -10,8 +10,8 @@
 //! this one evaluates keyframe data as *decoded* from a `.glb`'s own accessors, which is what the
 //! renderer actually needs (see `Architecture` in the renderer-rewrite plan).
 
-use super::glb::{decode_floats, decode_vec3s, decode_vec4s};
-use super::gltf;
+use super::super::glb::{decode_floats, decode_vec3s, decode_vec4s};
+use super::super::gltf;
 
 /// A node's animated TRS at some time `t`. A `None` field means no channel in this animation
 /// targets that node/path - the caller falls back to the node's own static transform, the same
@@ -24,7 +24,13 @@ pub struct EvaluatedTrs {
 }
 
 /// Evaluates every channel of `animation` that targets `node_index`, at time `t` (seconds).
-pub fn evaluate_node_trs(root: &gltf::Root, bin: &[u8], animation: &gltf::Animation, node_index: u32, time: f64) -> Result<EvaluatedTrs, String> {
+pub fn evaluate_node_trs(
+    root: &gltf::Root,
+    bin: &[u8],
+    animation: &gltf::Animation,
+    node_index: u32,
+    time: f64,
+) -> Result<EvaluatedTrs, String> {
     let mut result = EvaluatedTrs::default();
     let t = time as f32;
 
@@ -141,7 +147,11 @@ fn sample_vec3(times: &[f32], values: &[[f32; 3]], interpolation: Interpolation,
     let (i, alpha, dt) = locate(times, t);
     match interpolation {
         Interpolation::Step => keyframe3(values, interpolation, i),
-        Interpolation::Linear => lerp3(keyframe3(values, interpolation, i), keyframe3(values, interpolation, i + 1), alpha),
+        Interpolation::Linear => lerp3(
+            keyframe3(values, interpolation, i),
+            keyframe3(values, interpolation, i + 1),
+            alpha,
+        ),
         Interpolation::CubicSpline => hermite3(values, i, alpha, dt),
     }
 }
@@ -183,7 +193,9 @@ fn sample_rotation(times: &[f32], values: &[[f32; 4]], interpolation: Interpolat
             let b = glam::Quat::from_array(keyframe4(values, interpolation, i + 1));
             a.slerp(b, alpha).to_array()
         }
-        Interpolation::CubicSpline => glam::Quat::from_array(hermite4(values, i, alpha, dt)).normalize().to_array(),
+        Interpolation::CubicSpline => glam::Quat::from_array(hermite4(values, i, alpha, dt))
+            .normalize()
+            .to_array(),
     }
 }
 
@@ -305,7 +317,9 @@ mod tests {
             Some([3.0, 1.0, 4.0])
         );
         assert_eq!(
-            evaluate_node_trs(&root, &bin, &animation, 0, 1000.0).unwrap().translation,
+            evaluate_node_trs(&root, &bin, &animation, 0, 1000.0)
+                .unwrap()
+                .translation,
             Some([3.0, 1.0, 4.0])
         );
     }
@@ -322,12 +336,12 @@ mod tests {
         // At the exact keyframe times, Hermite interpolation always reproduces the authored
         // value regardless of tangents (h00=1/h01=0 at alpha=0, and vice versa at alpha=1).
         let values = [
-            [0.0, 0.0, 0.0], // in-tangent @ t=0 (unused, before the first keyframe)
-            [1.0, 0.0, 0.0], // value @ t=0
+            [0.0, 0.0, 0.0],  // in-tangent @ t=0 (unused, before the first keyframe)
+            [1.0, 0.0, 0.0],  // value @ t=0
             [10.0, 0.0, 0.0], // out-tangent @ t=0
-            [0.0, 0.0, 0.0], // in-tangent @ t=1
-            [5.0, 0.0, 0.0], // value @ t=1
-            [0.0, 0.0, 0.0], // out-tangent @ t=1 (unused, after the last keyframe)
+            [0.0, 0.0, 0.0],  // in-tangent @ t=1
+            [5.0, 0.0, 0.0],  // value @ t=1
+            [0.0, 0.0, 0.0],  // out-tangent @ t=1 (unused, after the last keyframe)
         ];
         let (root, bin, animation) = translation_animation(0, &[0.0, 1.0], &values, Some("CUBICSPLINE"));
         assert_eq!(

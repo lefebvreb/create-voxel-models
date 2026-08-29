@@ -26,11 +26,18 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::types::PyAnyMethods;
 use pyo3::{PyResult, Python, pyfunction};
 
-use super::camera::{self, Camera};
-use super::raster::{self, Framebuffer, ScreenVertex};
-use super::scene_graph::{self, WorldPrimitive};
+mod animation;
+mod camera;
+mod raster;
+mod scene_graph;
+mod shading;
+mod texture;
+
+use camera::Camera;
+use raster::{Framebuffer, ScreenVertex};
+use scene_graph::WorldPrimitive;
 use super::utils::encode_png;
-use super::{glb, gltf, shading};
+use super::{glb, gltf};
 
 const SUPERSAMPLE: u32 = 2;
 
@@ -98,10 +105,18 @@ fn render_glb(
         ),
         None => None,
     };
-    let time_values: Vec<f64> = if animation.is_some() && !times.is_empty() { times.to_vec() } else { vec![0.0] };
+    let time_values: Vec<f64> = if animation.is_some() && !times.is_empty() {
+        times.to_vec()
+    } else {
+        vec![0.0]
+    };
 
-    std::fs::create_dir_all(output_dir)
-        .map_err(|e| RenderError::Io(format!("failed to create output directory {}: {e}", output_dir.display())))?;
+    std::fs::create_dir_all(output_dir).map_err(|e| {
+        RenderError::Io(format!(
+            "failed to create output directory {}: {e}",
+            output_dir.display()
+        ))
+    })?;
 
     let mut files = Vec::with_capacity(time_values.len() * angles.len());
     for (time_idx, &time) in time_values.iter().enumerate() {
@@ -122,7 +137,12 @@ fn render_glb(
     Ok(files)
 }
 
-fn render_frame(root: &gltf::Root, bin: &[u8], primitives: &[WorldPrimitive], camera: &Camera) -> Result<(u32, u32, Vec<u8>), RenderError> {
+fn render_frame(
+    root: &gltf::Root,
+    bin: &[u8],
+    primitives: &[WorldPrimitive],
+    camera: &Camera,
+) -> Result<(u32, u32, Vec<u8>), RenderError> {
     let screen_size = camera::RESOLUTION * SUPERSAMPLE;
     let mut fb = Framebuffer::new(screen_size, screen_size, shading::clear_color_linear());
     let mut material_cache: HashMap<u32, shading::DecodedMaterial> = HashMap::new();
@@ -138,7 +158,16 @@ fn render_frame(root: &gltf::Root, bin: &[u8], primitives: &[WorldPrimitive], ca
     });
 
     for primitive in &opaque {
-        draw_primitive(&mut fb, root, bin, &mut material_cache, primitive, camera, screen_size as f32, false)?;
+        draw_primitive(
+            &mut fb,
+            root,
+            bin,
+            &mut material_cache,
+            primitive,
+            camera,
+            screen_size as f32,
+            false,
+        )?;
     }
     // Back-to-front, so a transmissive fragment's background sample sees whatever's already
     // drawn behind it (the opaque scene, plus any farther transmissive layers).
@@ -148,7 +177,16 @@ fn render_frame(root: &gltf::Root, bin: &[u8], primitives: &[WorldPrimitive], ca
             .unwrap_or(std::cmp::Ordering::Equal)
     });
     for primitive in &transmissive {
-        draw_primitive(&mut fb, root, bin, &mut material_cache, primitive, camera, screen_size as f32, true)?;
+        draw_primitive(
+            &mut fb,
+            root,
+            bin,
+            &mut material_cache,
+            primitive,
+            camera,
+            screen_size as f32,
+            true,
+        )?;
     }
 
     Ok(raster::downsample_to_srgb8(&fb, SUPERSAMPLE))
@@ -156,7 +194,10 @@ fn render_frame(root: &gltf::Root, bin: &[u8], primitives: &[WorldPrimitive], ca
 
 fn centroid_distance(primitive: &WorldPrimitive, camera_pos: Vec3) -> f32 {
     let n = primitive.positions.len().max(1) as f32;
-    let sum = primitive.positions.iter().fold(Vec3::ZERO, |acc, &p| acc + Vec3::from(p));
+    let sum = primitive
+        .positions
+        .iter()
+        .fold(Vec3::ZERO, |acc, &p| acc + Vec3::from(p));
     (sum / n).distance(camera_pos)
 }
 
@@ -177,7 +218,10 @@ fn draw_primitive(
     let material = &material_cache[&primitive.material];
 
     for tri in primitive.indices.as_chunks::<3>().0 {
-        let vertices: Vec<Option<ScreenVertex<8>>> = tri.iter().map(|&i| screen_vertex(camera, primitive, i as usize, screen_size)).collect();
+        let vertices: Vec<Option<ScreenVertex<8>>> = tri
+            .iter()
+            .map(|&i| screen_vertex(camera, primitive, i as usize, screen_size))
+            .collect();
         let (Some(v0), Some(v1), Some(v2)) = (vertices[0], vertices[1], vertices[2]) else {
             continue; // a vertex behind the camera - see raster.rs's documented policy
         };
@@ -256,9 +300,18 @@ fn run_cli(args: &[String]) -> Result<Vec<PathBuf>, RenderError> {
     }
     // A bad input path is the caller's mistake (like a bad --angle), not an environment problem
     // - InvalidInput, not Io. Only writing *output* below is treated as an environment failure.
-    let glb_bytes = std::fs::read(&path).map_err(|e| RenderError::InvalidInput(format!("failed to read {path}: {e}")))?;
+    let glb_bytes =
+        std::fs::read(&path).map_err(|e| RenderError::InvalidInput(format!("failed to read {path}: {e}")))?;
     let output_dir = output.unwrap_or_else(default_output_dir);
-    render_glb(&glb_bytes, &angles, &times, animation.as_deref(), &include, &exclude, &output_dir)
+    render_glb(
+        &glb_bytes,
+        &angles,
+        &times,
+        animation.as_deref(),
+        &include,
+        &exclude,
+        &output_dir,
+    )
 }
 
 fn next_value<'a>(it: &mut std::slice::Iter<'a, String>, flag: &str) -> Result<&'a str, RenderError> {
@@ -274,7 +327,10 @@ fn default_output_dir() -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
     std::env::temp_dir().join(format!("voxels-{:x}-{nanos:x}-{counter:x}", std::process::id()))
 }

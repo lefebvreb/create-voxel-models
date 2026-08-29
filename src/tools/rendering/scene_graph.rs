@@ -16,8 +16,8 @@
 use glam::{DVec3, Mat4, Quat, Vec3};
 
 use super::animation::{self, EvaluatedTrs};
-use super::glb::{decode_u32s, decode_vec2s, decode_vec3s};
-use super::gltf;
+use super::super::glb::{decode_u32s, decode_vec2s, decode_vec3s};
+use super::super::gltf;
 
 /// One mesh primitive's geometry, already transformed into world space by its node's (possibly
 /// animated) transform. `material` indexes `root.materials`.
@@ -99,9 +99,7 @@ fn traverse(
     };
     let world_matrix = parent_matrix * node_local_matrix(node, evaluated.as_ref());
 
-    if visible
-        && let Some(mesh_index) = node.mesh
-    {
+    if visible && let Some(mesh_index) = node.mesh {
         let mesh = root
             .meshes
             .get(mesh_index as usize)
@@ -141,12 +139,20 @@ fn node_local_matrix(node: &gltf::Node, animated: Option<&EvaluatedTrs>) -> Mat4
         .and_then(|a| a.translation)
         .or(node.translation)
         .unwrap_or([0.0, 0.0, 0.0]);
-    let rotation = animated.and_then(|a| a.rotation).or(node.rotation).unwrap_or([0.0, 0.0, 0.0, 1.0]);
+    let rotation = animated
+        .and_then(|a| a.rotation)
+        .or(node.rotation)
+        .unwrap_or([0.0, 0.0, 0.0, 1.0]);
     let scale = animated.and_then(|a| a.scale).or(node.scale).unwrap_or([1.0, 1.0, 1.0]);
     Mat4::from_scale_rotation_translation(Vec3::from(scale), Quat::from_array(rotation), Vec3::from(translation))
 }
 
-fn world_primitive(root: &gltf::Root, bin: &[u8], primitive: &gltf::Primitive, world_matrix: Mat4) -> Result<WorldPrimitive, String> {
+fn world_primitive(
+    root: &gltf::Root,
+    bin: &[u8],
+    primitive: &gltf::Primitive,
+    world_matrix: Mat4,
+) -> Result<WorldPrimitive, String> {
     let local_positions = decode_vec3s(root, bin, primitive.attributes.position)?;
     let local_normals = decode_vec3s(root, bin, primitive.attributes.normal)?;
     let uvs = decode_vec2s(root, bin, primitive.attributes.texcoord_0)?;
@@ -162,7 +168,12 @@ fn world_primitive(root: &gltf::Root, bin: &[u8], primitive: &gltf::Primitive, w
         .collect();
     let normals = local_normals
         .iter()
-        .map(|&n| normal_matrix.transform_vector3(Vec3::from(n)).normalize_or_zero().to_array())
+        .map(|&n| {
+            normal_matrix
+                .transform_vector3(Vec3::from(n))
+                .normalize_or_zero()
+                .to_array()
+        })
         .collect();
 
     Ok(WorldPrimitive {
@@ -193,7 +204,11 @@ pub fn world_bounds(primitives: &[WorldPrimitive]) -> (DVec3, DVec3) {
             max = max.max(p);
         }
     }
-    if found { (min, max) } else { (DVec3::splat(-0.5), DVec3::splat(0.5)) }
+    if found {
+        (min, max)
+    } else {
+        (DVec3::splat(-0.5), DVec3::splat(0.5))
+    }
 }
 
 #[cfg(test)]
@@ -296,7 +311,10 @@ mod tests {
 
         let primitives = collect_world_primitives(&root, &bin, None, 0.0, &[], &[]).unwrap();
         assert_eq!(primitives.len(), 1);
-        assert_eq!(primitives[0].positions, vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        assert_eq!(
+            primitives[0].positions,
+            vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]
+        );
         assert_eq!(primitives[0].indices, vec![0, 1, 2]);
     }
 
@@ -338,7 +356,8 @@ mod tests {
         let output_view = push_floats(&mut anim_bin, &[7.0, 8.0, 9.0]);
         root.buffer_views.push(input_view);
         let input_accessor_index = root.accessors.len() as u32;
-        root.accessors.push(accessor(4, 1, "SCALAR", gltf::COMPONENT_TYPE_FLOAT));
+        root.accessors
+            .push(accessor(4, 1, "SCALAR", gltf::COMPONENT_TYPE_FLOAT));
         root.buffer_views.push(output_view);
         let output_accessor_index = root.accessors.len() as u32;
         root.accessors.push(accessor(5, 1, "VEC3", gltf::COMPONENT_TYPE_FLOAT));
@@ -380,20 +399,28 @@ mod tests {
             children: vec![1],
             ..node("parent")
         });
-        root.nodes.push(gltf::Node { mesh: Some(0), ..node("hidden_child") });
+        root.nodes.push(gltf::Node {
+            mesh: Some(0),
+            ..node("hidden_child")
+        });
         root.scenes.push(gltf::Scene { nodes: vec![0] });
         root.scene = Some(0);
 
-        let primitives =
-            collect_world_primitives(&root, &bin, None, 0.0, &[], &["hidden_child".to_string()]).unwrap();
+        let primitives = collect_world_primitives(&root, &bin, None, 0.0, &[], &["hidden_child".to_string()]).unwrap();
         assert!(primitives.is_empty());
     }
 
     #[test]
     fn include_shows_only_the_named_subtree() {
         let (mut root, bin) = triangle_root();
-        root.nodes.push(gltf::Node { mesh: Some(0), ..node("shown") });
-        root.nodes.push(gltf::Node { mesh: Some(0), ..node("not_shown") });
+        root.nodes.push(gltf::Node {
+            mesh: Some(0),
+            ..node("shown")
+        });
+        root.nodes.push(gltf::Node {
+            mesh: Some(0),
+            ..node("not_shown")
+        });
         root.scenes.push(gltf::Scene { nodes: vec![0, 1] });
         root.scene = Some(0);
 
@@ -404,7 +431,10 @@ mod tests {
     #[test]
     fn include_matches_by_mesh_name_too() {
         let (mut root, bin) = triangle_root();
-        root.nodes.push(gltf::Node { mesh: Some(0), ..node("unnamed_use") });
+        root.nodes.push(gltf::Node {
+            mesh: Some(0),
+            ..node("unnamed_use")
+        });
         root.scenes.push(gltf::Scene { nodes: vec![0] });
         root.scene = Some(0);
 

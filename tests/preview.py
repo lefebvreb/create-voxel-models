@@ -1,12 +1,10 @@
 import voxels
-from models.test_model import scene
+from models.chair import scene
 
-scene.export_glb(".local/models/test.glb")
+scene.export_glb(".local/models/chair.glb")
 
 voxels.main([
-    ".local/models/test.glb",
+    ".local/models/chair.glb",
     "--angle", "0,0",
     "--angle", "90,30,1.5",
-    "--time", "0", "--time", "1", "--time", "2",
-    "--animation", "wiggle",
 ])

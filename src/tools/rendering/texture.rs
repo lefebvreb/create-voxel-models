@@ -5,7 +5,7 @@
 
 use png::Decoder;
 
-use super::gltf;
+use super::super::gltf;
 
 #[derive(Debug)]
 pub struct Texture {
@@ -40,7 +40,9 @@ pub fn decode_texture(root: &gltf::Root, bin: &[u8], texture_index: u32) -> Resu
         .ok_or_else(|| format!("bufferView index {} is out of range", image.buffer_view))?;
     let start = view.byte_offset as usize;
     let end = start + view.byte_length as usize;
-    let bytes = bin.get(start..end).ok_or_else(|| "image bufferView is out of bounds".to_string())?;
+    let bytes = bin
+        .get(start..end)
+        .ok_or_else(|| "image bufferView is out of bounds".to_string())?;
 
     let mut reader = Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
@@ -49,7 +51,9 @@ pub fn decode_texture(root: &gltf::Root, bin: &[u8], texture_index: u32) -> Resu
         .output_buffer_size()
         .ok_or_else(|| "PNG image is too large to decode".to_string())?;
     let mut buf = vec![0; buffer_size];
-    let info = reader.next_frame(&mut buf).map_err(|e| format!("failed to decode PNG image: {e}"))?;
+    let info = reader
+        .next_frame(&mut buf)
+        .map_err(|e| format!("failed to decode PNG image: {e}"))?;
     let components = match info.color_type {
         png::ColorType::Grayscale => 1,
         png::ColorType::Rgb => 3,
@@ -67,8 +71,8 @@ pub fn decode_texture(root: &gltf::Root, bin: &[u8], texture_index: u32) -> Resu
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::utils::encode_png;
     use super::*;
-    use super::super::utils::encode_png;
 
     #[test]
     fn decode_then_sample_round_trips_through_encode_png() {

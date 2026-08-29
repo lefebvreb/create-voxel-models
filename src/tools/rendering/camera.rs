@@ -29,7 +29,9 @@ pub fn default_fov_y_rad() -> f64 {
 
 pub fn spherical_position(center: DVec3, distance: f64, yaw_deg: f64, pitch_deg: f64) -> DVec3 {
     let yaw = yaw_deg.to_radians();
-    let pitch = pitch_deg.to_radians().clamp(-MAX_PITCH_DEG.to_radians(), MAX_PITCH_DEG.to_radians());
+    let pitch = pitch_deg
+        .to_radians()
+        .clamp(-MAX_PITCH_DEG.to_radians(), MAX_PITCH_DEG.to_radians());
     center + distance * DVec3::new(yaw.sin() * pitch.cos(), pitch.sin(), yaw.cos() * pitch.cos())
 }
 

@@ -640,7 +640,9 @@ fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     }
     let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
     if version != 2 {
-        return Err(format!("unsupported glTF container version {version} (only version 2 is supported)"));
+        return Err(format!(
+            "unsupported glTF container version {version} (only version 2 is supported)"
+        ));
     }
     let declared_len = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
     if declared_len != data.len() {
@@ -651,7 +653,11 @@ fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     }
 
     let (json, rest) = read_chunk(&data[12..], *b"JSON")?;
-    let bin = if rest.is_empty() { &[][..] } else { read_chunk(rest, *b"BIN\0")?.0 };
+    let bin = if rest.is_empty() {
+        &[][..]
+    } else {
+        read_chunk(rest, *b"BIN\0")?.0
+    };
     Ok((json, bin))
 }
 
@@ -689,7 +695,11 @@ pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>), String> {
 // the buffer means the *input GLB* is malformed (possibly a corrupt or hand-edited third-party
 // file, not our own writer's output), which is user-input error territory, not a library bug.
 
-fn accessor_bytes<'a>(root: &'a gltf::Root, bin: &'a [u8], accessor_index: u32) -> Result<(&'a gltf::Accessor, &'a [u8]), String> {
+fn accessor_bytes<'a>(
+    root: &'a gltf::Root,
+    bin: &'a [u8],
+    accessor_index: u32,
+) -> Result<(&'a gltf::Accessor, &'a [u8]), String> {
     let accessor = root
         .accessors
         .get(accessor_index as usize)
@@ -700,9 +710,12 @@ fn accessor_bytes<'a>(root: &'a gltf::Root, bin: &'a [u8], accessor_index: u32) 
         .ok_or_else(|| format!("bufferView index {} is out of range", accessor.buffer_view))?;
     let start = view.byte_offset as usize;
     let end = start + view.byte_length as usize;
-    let bytes = bin
-        .get(start..end)
-        .ok_or_else(|| format!("bufferView [{start}, {end}) is out of bounds for a {}-byte buffer", bin.len()))?;
+    let bytes = bin.get(start..end).ok_or_else(|| {
+        format!(
+            "bufferView [{start}, {end}) is out of bounds for a {}-byte buffer",
+            bin.len()
+        )
+    })?;
     Ok((accessor, bytes))
 }
 
@@ -729,7 +742,12 @@ pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Resu
     let bytes = bytes
         .get(..expected_len)
         .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
-    Ok(bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect())
+    Ok(bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect())
 }
 
 /// Decodes a `COMPONENT_TYPE_UNSIGNED_INT` SCALAR accessor (mesh indices).
@@ -742,7 +760,12 @@ pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result
     let bytes = bytes
         .get(..expected_len)
         .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
-    Ok(bytes.as_chunks::<4>().0.iter().map(|c| u32::from_le_bytes(*c)).collect())
+    Ok(bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| u32::from_le_bytes(*c))
+        .collect())
 }
 
 /// Decodes a VEC2 float accessor (uvs). Not consumed yet - node traversal/meshing is what reads

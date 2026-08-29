@@ -114,8 +114,9 @@ pub fn rasterize_triangle<const N: usize>(
             }
 
             let inv_w = b0 * v0.inv_w + b1 * v1.inv_w + b2 * v2.inv_w;
-            let attributes: [f32; N] =
-                std::array::from_fn(|i| (b0 * attrs_over_w[0][i] + b1 * attrs_over_w[1][i] + b2 * attrs_over_w[2][i]) / inv_w);
+            let attributes: [f32; N] = std::array::from_fn(|i| {
+                (b0 * attrs_over_w[0][i] + b1 * attrs_over_w[1][i] + b2 * attrs_over_w[2][i]) / inv_w
+            });
 
             if let Some(color) = shade(px, py, attributes, fb.color[index]) {
                 fb.color[index] = color;
@@ -165,7 +166,11 @@ pub fn downsample_to_srgb8(fb: &Framebuffer, factor: u32) -> (u32, u32, Vec<u8>)
 /// The standard IEC 61966-2-1 linear-to-sRGB transfer function.
 fn linear_to_srgb(c: f32) -> f32 {
     let c = c.max(0.0);
-    if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
+    if c <= 0.0031308 {
+        c * 12.92
+    } else {
+        1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
 }
 
 #[cfg(test)]
@@ -221,9 +226,13 @@ mod tests {
     #[test]
     fn degenerate_triangle_does_not_panic_or_draw() {
         let mut fb = Framebuffer::new(4, 4, [0.5, 0.5, 0.5]);
-        rasterize_triangle(&mut fb, vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), |_, _, _, _| {
-            Some([1.0, 0.0, 0.0])
-        });
+        rasterize_triangle(
+            &mut fb,
+            vertex(1.0, 1.0, 0.5, 1.0),
+            vertex(1.0, 1.0, 0.5, 1.0),
+            vertex(1.0, 1.0, 0.5, 1.0),
+            |_, _, _, _| Some([1.0, 0.0, 0.0]),
+        );
         assert!(fb.color.iter().all(|&c| c == [0.5, 0.5, 0.5]));
     }
 
@@ -232,14 +241,26 @@ mod tests {
         let mut fb = Framebuffer::new(4, 4, [0.0, 0.0, 0.0]);
         let full_quad = |depth: f32, color: [f32; 3]| {
             move |fb: &mut Framebuffer| {
-                rasterize_triangle(fb, vertex(0.0, 0.0, depth, 1.0), vertex(4.0, 0.0, depth, 1.0), vertex(0.0, 4.0, depth, 1.0), {
-                    let color = color;
-                    move |_, _, _, _| Some(color)
-                });
-                rasterize_triangle(fb, vertex(4.0, 0.0, depth, 1.0), vertex(4.0, 4.0, depth, 1.0), vertex(0.0, 4.0, depth, 1.0), {
-                    let color = color;
-                    move |_, _, _, _| Some(color)
-                });
+                rasterize_triangle(
+                    fb,
+                    vertex(0.0, 0.0, depth, 1.0),
+                    vertex(4.0, 0.0, depth, 1.0),
+                    vertex(0.0, 4.0, depth, 1.0),
+                    {
+                        let color = color;
+                        move |_, _, _, _| Some(color)
+                    },
+                );
+                rasterize_triangle(
+                    fb,
+                    vertex(4.0, 0.0, depth, 1.0),
+                    vertex(4.0, 4.0, depth, 1.0),
+                    vertex(0.0, 4.0, depth, 1.0),
+                    {
+                        let color = color;
+                        move |_, _, _, _| Some(color)
+                    },
+                );
             }
         };
         // Draw the *farther* (larger-depth) triangle second; it must not overwrite the nearer one.
@@ -251,7 +272,13 @@ mod tests {
     #[test]
     fn shade_returning_none_discards_without_writing_color_or_depth() {
         let mut fb = Framebuffer::new(4, 4, [0.25, 0.25, 0.25]);
-        rasterize_triangle(&mut fb, vertex(0.0, 0.0, 0.1, 1.0), vertex(4.0, 0.0, 0.1, 1.0), vertex(0.0, 4.0, 0.1, 1.0), |_, _, _, _| None);
+        rasterize_triangle(
+            &mut fb,
+            vertex(0.0, 0.0, 0.1, 1.0),
+            vertex(4.0, 0.0, 0.1, 1.0),
+            vertex(0.0, 4.0, 0.1, 1.0),
+            |_, _, _, _| None,
+        );
         assert!(fb.color.iter().all(|&c| c == [0.25, 0.25, 0.25]));
         assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
     }
