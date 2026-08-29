@@ -1,13 +1,22 @@
 // <ai-owned/>
 
-//! Pure-data glTF 2.0 JSON schema (the "JSON chunk" of a .glb file). No pyo3 dependency: this
-//! module only describes the wire format, so it stays independently testable like `meshing.rs`.
+//! Pure-data glTF 2.0 JSON schema (the "JSON chunk" of a .glb file), shared by the writer
+//! (`glb.rs`'s `export_glb`) and the reader (`glb.rs`'s `read_glb`) via `Serialize`/`Deserialize`
+//! on the same structs. No pyo3 dependency: this module only describes the wire format, so it
+//! stays independently testable like `meshing.rs`.
 //!
 //! Deliberately not modeled (YAGNI, unused by this exporter): `uri` fields (GLB always embeds
 //! via bufferView), sparse accessors, morph targets, skins, cameras, lights, multi-scene support,
 //! and non-default `texCoord` (always implicit `TEXCOORD_0`).
+//!
+//! Reading a third-party GLB inherits the same gaps, plus one specific to the reader: this schema
+//! has no `baseColorFactor`/`metallicFactor`/`roughnessFactor` fields, since `export_glb` never
+//! writes them (colors are always baked into the base-color texture, see `PbrMetallicRoughness`'s
+//! doc comment) — a third-party material that uses factors instead of textures (common in
+//! hand-authored glTF) will read as an untextured default rather than its authored flat color.
+//! Fixing that is out of scope here; flagging it rather than silently under-rendering such assets.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::utils::Dict;
 
@@ -18,8 +27,8 @@ pub const TARGET_ELEMENT_ARRAY_BUFFER: u32 = 34963;
 pub const FILTER_NEAREST: u32 = 9728;
 pub const WRAP_CLAMP_TO_EDGE: u32 = 33071;
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Root {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub extensions_used: Vec<String>,
@@ -59,23 +68,23 @@ impl Default for Asset {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Asset {
     pub version: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub generator: Option<String>,
 }
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Scene {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub nodes: Vec<u32>,
 }
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -93,20 +102,23 @@ pub struct Node {
     pub extras: Option<Dict>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Mesh {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub name: Option<String>,
     pub primitives: Vec<Primitive>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub extras: Option<Dict>,
 }
 
 /// `indices`/`material`/`normal`/`texcoord_0` are non-`Option`: `meshing::export_model` only ever
 /// emits primitives with non-empty positions/normals/uvs/indices and a valid material index, so
-/// there is no real "attribute might be absent" case here.
-#[derive(Serialize, Clone)]
+/// there is no real "attribute might be absent" case here on write. Reading a third-party GLB
+/// with a non-indexed primitive or one that omits `material` isn't supported by this shape — it
+/// would fail to deserialize rather than silently mis-render; not a case this exporter produces
+/// or (so far) needs to read back.
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Primitive {
     pub attributes: Attributes,
@@ -114,7 +126,7 @@ pub struct Primitive {
     pub material: u32,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Attributes {
     #[serde(rename = "POSITION")]
     pub position: u32,
@@ -126,7 +138,7 @@ pub struct Attributes {
 
 /// No `byteOffset` field: every accessor gets its own dedicated bufferView, so the accessor-level
 /// offset is always the implicit spec default (0) and doesn't need modeling.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Accessor {
     pub buffer_view: u32,
@@ -134,31 +146,31 @@ pub struct Accessor {
     pub count: u32,
     #[serde(rename = "type")]
     pub type_: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub min: Option<Vec<f32>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub max: Option<Vec<f32>>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct BufferView {
     pub buffer: u32,
     pub byte_offset: u32,
     pub byte_length: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub target: Option<u32>,
 }
 
 /// No `uri`: this is buffer 0, the GLB file's own BIN chunk.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Buffer {
     pub byte_length: u32,
 }
 
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "camelCase", default)]
 pub struct Material {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -173,9 +185,10 @@ pub struct Material {
 
 /// `baseColorFactor`/`metallicFactor`/`roughnessFactor` are never written: their spec defaults
 /// ([1,1,1,1] / 1.0 / 1.0) already mean "pass the texture through unmodified", which is exactly
-/// what's wanted since the real values live in the baked atlas textures.
-#[derive(Serialize, Default)]
-#[serde(rename_all = "camelCase")]
+/// what's wanted since the real values live in the baked atlas textures. They're not modeled for
+/// reading either — see the module doc comment's note on third-party factor-only materials.
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(rename_all = "camelCase", default)]
 pub struct PbrMetallicRoughness {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_color_texture: Option<TextureInfo>,
@@ -183,20 +196,20 @@ pub struct PbrMetallicRoughness {
     pub metallic_roughness_texture: Option<TextureInfo>,
 }
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureInfo {
     pub index: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Texture {
     pub sampler: u32,
     pub source: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Sampler {
     pub mag_filter: u32,
@@ -205,14 +218,15 @@ pub struct Sampler {
     pub wrap_t: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Image {
     pub mime_type: String,
     pub buffer_view: u32,
 }
 
-#[derive(Serialize, Default)]
+#[derive(Serialize, Deserialize, Default, Debug)]
+#[serde(default)]
 pub struct MaterialExtensions {
     #[serde(rename = "KHR_materials_ior", skip_serializing_if = "Option::is_none")]
     pub ior: Option<KhrMaterialsIor>,
@@ -230,7 +244,7 @@ impl MaterialExtensions {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsIor {
     pub ior: f64,
@@ -238,20 +252,20 @@ pub struct KhrMaterialsIor {
 
 /// `transmissionFactor` defaults to 0.0 in the spec (unlike the other pbr factors, which default
 /// to 1.0), so it must always be written as 1.0 here since the real value lives in the texture.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsTransmission {
     pub transmission_factor: f64,
     pub transmission_texture: TextureInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsEmissiveStrength {
     pub emissive_strength: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct KhrMaterialsVolume {
     pub thickness_factor: f64,
@@ -259,25 +273,25 @@ pub struct KhrMaterialsVolume {
     pub attenuation_distance: f64,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Animation {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub name: Option<String>,
     pub channels: Vec<AnimationChannel>,
     pub samplers: Vec<AnimationSampler>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub extras: Option<Dict>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationChannel {
     pub sampler: u32,
     pub target: AnimationChannelTarget,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationChannelTarget {
     pub node: u32,
@@ -285,12 +299,12 @@ pub struct AnimationChannelTarget {
 }
 
 /// `interpolation` omitted means the spec default, LINEAR.
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimationSampler {
     pub input: u32,
     pub output: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub interpolation: Option<String>,
 }
 
@@ -366,5 +380,50 @@ mod tests {
         assert!(json.contains("\"POSITION\":0"));
         assert!(json.contains("\"NORMAL\":1"));
         assert!(json.contains("\"TEXCOORD_0\":2"));
+    }
+
+    #[test]
+    fn root_round_trips_through_json() {
+        let mut root = Root::default();
+        root.asset = Asset::default();
+        root.scene = Some(0);
+        root.scenes.push(Scene { nodes: vec![0] });
+        root.nodes.push(Node {
+            name: Some("root".to_string()),
+            translation: Some([1.0, 2.0, 3.0]),
+            ..Default::default()
+        });
+        root.materials.push(Material {
+            extensions: Some(MaterialExtensions {
+                ior: Some(KhrMaterialsIor { ior: 1.33 }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+
+        let json = serde_json::to_vec(&root).unwrap();
+        let parsed: Root = serde_json::from_slice(&json).unwrap();
+
+        assert_eq!(parsed.scene, Some(0));
+        assert_eq!(parsed.scenes.len(), 1);
+        assert_eq!(parsed.nodes[0].name.as_deref(), Some("root"));
+        assert_eq!(parsed.nodes[0].translation, Some([1.0, 2.0, 3.0]));
+        assert_eq!(parsed.nodes[0].children, Vec::<u32>::new());
+        assert_eq!(
+            parsed.materials[0].extensions.as_ref().unwrap().ior.as_ref().unwrap().ior,
+            1.33
+        );
+        assert!(parsed.materials[0].extensions.as_ref().unwrap().transmission.is_none());
+    }
+
+    #[test]
+    fn missing_optional_fields_deserialize_to_their_write_side_defaults() {
+        // What `export_glb` actually omits when empty (per `skip_serializing_if`) must still
+        // parse: a minimal glTF with no top-level arrays at all.
+        let json = br#"{"asset":{"version":"2.0"}}"#;
+        let root: Root = serde_json::from_slice(json).unwrap();
+        assert!(root.nodes.is_empty());
+        assert!(root.materials.is_empty());
+        assert_eq!(root.scene, None);
     }
 }

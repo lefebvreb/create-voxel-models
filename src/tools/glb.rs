@@ -621,6 +621,73 @@ fn pad(data: &[u8], fill: u8) -> Vec<u8> {
     padded
 }
 
+// --- GLB reading: the inverse of the writing above ---
+//
+// Plain `Result<_, String>`, not `PyResult`: this is a malformed-input case (a bad path, or a
+// file that isn't valid GLB/glTF), which belongs to whoever exposes this to Python to turn into a
+// `PyValueError` with the caller's context - not something this pyo3-free module should decide.
+
+/// Parses a GLB container into its JSON chunk (still padded with trailing spaces, which
+/// `serde_json` tolerates as whitespace) and its BIN chunk (still padded with trailing zero
+/// bytes, harmless since accessors only ever read their own declared `byteOffset`/`byteLength`
+/// range - never the padding beyond it).
+fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
+    if data.len() < 12 {
+        return Err("not a GLB file: shorter than the 12-byte header".to_string());
+    }
+    if &data[0..4] != b"glTF" {
+        return Err("not a GLB file: missing the 'glTF' magic bytes".to_string());
+    }
+    let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
+    if version != 2 {
+        return Err(format!("unsupported glTF container version {version} (only version 2 is supported)"));
+    }
+    let declared_len = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
+    if declared_len != data.len() {
+        return Err(format!(
+            "GLB header declares a total length of {declared_len} bytes, but the file is {} bytes",
+            data.len()
+        ));
+    }
+
+    let (json, rest) = read_chunk(&data[12..], *b"JSON")?;
+    let bin = if rest.is_empty() { &[][..] } else { read_chunk(rest, *b"BIN\0")?.0 };
+    Ok((json, bin))
+}
+
+fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), String> {
+    if data.len() < 8 {
+        return Err("truncated GLB chunk header".to_string());
+    }
+    let chunk_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
+    let chunk_type = &data[4..8];
+    if chunk_type != expected_type {
+        return Err(format!(
+            "expected a {:?} chunk, found {:?}",
+            String::from_utf8_lossy(&expected_type),
+            String::from_utf8_lossy(chunk_type)
+        ));
+    }
+    if data.len() < 8 + chunk_len {
+        return Err("GLB chunk declares a length longer than the remaining file".to_string());
+    }
+    Ok((&data[8..8 + chunk_len], &data[8 + chunk_len..]))
+}
+
+/// Parses a GLB file's bytes into its glTF document and binary buffer. The inverse of
+/// `export_glb` + `write_glb_container`, and the entry point for everything downstream (node
+/// traversal, meshing, animation) that reads a `.glb` path rather than an in-memory `Scene`.
+///
+/// Not called anywhere yet outside this module's own tests: node traversal (the next piece of
+/// the CPU-rasterizer rewrite) is what actually consumes it. Left `#[allow(dead_code)]` rather
+/// than landing unused-and-unreachable, so this step is independently reviewable/testable.
+#[allow(dead_code)]
+pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>), String> {
+    let (json, bin) = read_glb_container(data)?;
+    let root: gltf::Root = serde_json::from_slice(json).map_err(|e| format!("invalid glTF JSON: {e}"))?;
+    Ok((root, bin.to_vec()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,5 +743,114 @@ mod tests {
         let data = [[1.0f32, 2.0]];
         let bytes = flatten_le(&data);
         assert_eq!(bytes, [1.0f32.to_le_bytes(), 2.0f32.to_le_bytes()].concat());
+    }
+
+    #[test]
+    fn read_glb_container_is_the_inverse_of_write_glb_container() {
+        // Both already 4-byte aligned, so no padding is added and the round trip is exact.
+        let json = b"{}  ";
+        let bin = &[1u8, 2, 3, 4][..];
+        let out = write_glb_container(json, bin);
+
+        let (parsed_json, parsed_bin) = read_glb_container(&out).unwrap();
+        assert_eq!(parsed_json, json);
+        assert_eq!(parsed_bin, bin);
+    }
+
+    #[test]
+    fn read_glb_container_includes_padding_bytes_verbatim() {
+        // "{}" pads to "{}  " (spaces); [1,2,3] pads to [1,2,3,0] - the reader hands back the
+        // padded chunk as-is, since it doesn't know the writer's original unpadded length.
+        let out = write_glb_container(b"{}", &[1, 2, 3]);
+        let (json, bin) = read_glb_container(&out).unwrap();
+        assert_eq!(json, b"{}  ");
+        assert_eq!(bin, &[1, 2, 3, 0]);
+    }
+
+    #[test]
+    fn read_glb_container_omits_bin_when_absent() {
+        let out = write_glb_container(b"{}", &[]);
+        let (json, bin) = read_glb_container(&out).unwrap();
+        assert_eq!(json, b"{}  ");
+        assert!(bin.is_empty());
+    }
+
+    #[test]
+    fn read_glb_container_rejects_bad_magic() {
+        let err = read_glb_container(b"NOPE totally not a glb file").unwrap_err();
+        assert!(err.contains("magic"));
+    }
+
+    #[test]
+    fn read_glb_container_rejects_wrong_version() {
+        let mut out = write_glb_container(b"{}", &[]);
+        out[4..8].copy_from_slice(&99u32.to_le_bytes());
+        let err = read_glb_container(&out).unwrap_err();
+        assert!(err.contains("version"));
+    }
+
+    #[test]
+    fn read_glb_container_rejects_truncated_file() {
+        let out = write_glb_container(b"{}", &[1, 2, 3, 4]);
+        let err = read_glb_container(&out[..out.len() - 2]).unwrap_err();
+        assert!(err.contains("length"));
+    }
+
+    #[test]
+    fn read_glb_round_trips_a_scene_built_the_same_way_export_glb_does() {
+        // Exercises the writer's own helpers directly (no pyo3/GIL needed here, unlike
+        // `export_glb` itself), then feeds the result through the reader end to end.
+        let mut root = gltf::Root::default();
+        let mut writer = BinWriter::default();
+
+        let position = writer.write_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
+        let normal = writer.write_vec3s_no_bounds(&[[0.0, 0.0, 1.0]; 3], gltf::TARGET_ARRAY_BUFFER);
+        let texcoord_0 = writer.write_vec2s(&[[0.0, 0.0]; 3]);
+        let indices = writer.write_indices(&[0, 1, 2]);
+
+        root.materials.push(gltf::Material::default());
+        root.meshes.push(gltf::Mesh {
+            name: Some("triangle".to_string()),
+            primitives: vec![gltf::Primitive {
+                attributes: gltf::Attributes {
+                    position,
+                    normal,
+                    texcoord_0,
+                },
+                indices,
+                material: 0,
+            }],
+            extras: None,
+        });
+        root.nodes.push(gltf::Node {
+            name: Some("root".to_string()),
+            mesh: Some(0),
+            ..Default::default()
+        });
+        root.scenes.push(gltf::Scene { nodes: vec![0] });
+        root.scene = Some(0);
+        root.accessors = writer.accessors;
+        root.buffer_views = writer.buffer_views;
+        root.buffers.push(gltf::Buffer {
+            byte_length: writer.bytes.len() as u32,
+        });
+
+        let json_bytes = serde_json::to_vec(&root).unwrap();
+        let glb_bytes = write_glb_container(&json_bytes, &writer.bytes);
+
+        let (parsed, bin) = read_glb(&glb_bytes).unwrap();
+        assert_eq!(parsed.nodes.len(), 1);
+        assert_eq!(parsed.nodes[0].name.as_deref(), Some("root"));
+        assert_eq!(parsed.nodes[0].mesh, Some(0));
+        assert_eq!(parsed.meshes[0].primitives[0].indices, indices);
+        assert_eq!(bin.len(), writer.bytes.len());
+        assert_eq!(bin, writer.bytes);
+    }
+
+    #[test]
+    fn read_glb_rejects_invalid_json() {
+        let out = write_glb_container(b"not json", &[]);
+        let err = read_glb(&out).unwrap_err();
+        assert!(err.contains("invalid glTF JSON"));
     }
 }
