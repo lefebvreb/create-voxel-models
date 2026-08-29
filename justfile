@@ -24,17 +24,17 @@ test:
 
 # Builds the project in release mode, bundles all files into a zipped agent skill.
 build-skill: check
-    @# Remove previous wheel artifacts.
+    # Remove previous wheel artifacts.
     rm -f target/wheels/*
-    @# Build manylinux package wheel file.
+    # Build manylinux package wheel file.
     maturin build --release --strip --zig
-    @# Update SKILL.md front matter.
+    # Update SKILL.md front matter.
     yq -i --front-matter=process \
         " .description = \"$(yq -p toml -o yaml '.package.description' Cargo.toml)\" \
         | .metadata.author = \"$(yq -p toml -o yaml '.package.authors[0]' Cargo.toml)\" \
         | .metadata.version = \"$(yq -p toml -o yaml '.package.version' Cargo.toml)\"" \
         SKILL.md
-    @# Zip SKILL.md, wheel and pyi stubs into an archive.
+    # Zip SKILL.md, wheel and pyi stubs into an archive.
     python -c "from pathlib import Path; \
         from zipfile import ZipFile; \
         wheel = next(Path('target/wheels/').iterdir()); \

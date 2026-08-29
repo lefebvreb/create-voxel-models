@@ -14,11 +14,12 @@ This skill contains a python package that enables programmatic creation, edition
 
 ## Installation
 
-Before anything else, you must make sure the `voxels` package is installed, or install it yourself. It's up to you to decide where and how to install the `.whl` file bundled with this skill in the `dist/` directory. 
+The `voxels` package must be importable before you do anything else. A wheel is bundled with this skill in the `dist/` directory.
 
-If operating in an user's machine, you should probably install it in a venv. Consult with the user to know their preferred python package manager and wether they want this package installed globally or in a venv.
+- **On a user's machine:** install into a virtual environment. Ask the user for their preferred package manager and whether they want a venv or a global install, then e.g. `python -m venv .venv && .venv/bin/pip install dist/*.whl`.
+- **In a sandbox:** a global `pip install dist/*.whl` is fine. Also follow any install instructions in your prompts.
 
-If operating in a sandbox, it's probably fine to install this package globally. Be sure to follow all instructions in your prompts.
+Verify with `python -c "import voxels"`.
 
 ## Package Overview
 
@@ -27,9 +28,11 @@ There are a few major concepts:
 * `Model`s are a 3D array of voxels, they reference one `Palette`, and offer an API to edit them through primitive shapes such as boxes and spheres.
 * `Scene`s are a tree of `Node`s. `Model`s can be attached to `Node`s. `Scene`s can be animated through the `Anim` API, by attaching translations, rotations and scalings (TRS) to `Node`s.
 
-Finally, `Scene`s can be exported to `.glb` files, and they can be previewed to `.png` under different angles and at different times of an animation to get immediate feedback.
+Finally, `Scene`s can be exported to `.glb` files (standard glTF 2.0, which loads into Blender, three.js, Godot, Bevy and most engines), and they can be previewed to `.png` under different angles and at different times of an animation to get immediate feedback.
 
-You should get a full reference of what APIs this package offers in the `references/voxels.pyi` file bundled with this skill.
+`references/voxels.pyi` bundled with this skill is the authoritative API reference — every class, method and argument is documented there. Read it before writing code; this file only covers workflow and conventions.
+
+One thing to fix in your head up front: coordinates are `(x, y, z)` and **`y` is up**. One voxel is one glTF unit, so node translations are in voxels too.
 
 # Usage
 
@@ -79,6 +82,8 @@ Make sure to bind each material to a variable.
 
 ### Models
 
+A `Model` takes a grid size, a palette and a pivot (see the `Pivot` docstring). Prefer `Pivot.BottomCenter` for anything that rests on a floor, so a node's translation reads as "where the object stands".
+
 Here's an example of a model, a simple chair making use of the previously defined palette:
 
 ```python
@@ -88,7 +93,7 @@ from voxels import *
 
 from ...palettes.furniture import *
 
-model = Model(Dimensions(16, 16, 16), palette, Pivot.Corner)
+model = Model(Dimensions(16, 16, 16), palette, Pivot.BottomCenter)
 
 # Front legs: floor up to the underside of the seat.
 model.aabb(wood_light, (3, 0, 3), (4, 5, 4))
@@ -126,9 +131,11 @@ Be sure to label each logical block with what they are supposed to code for. You
 # Rev 1: the seat slab extended beyond the backrest
 ```
 
+**Symmetry.** Rather than repeating mirrored geometry by hand, build one side, then `copy` / `flip_*` / `include` it back in. See the `Model` docstrings for `copy`, `flip_x`, `include` and `clip`.
+
 ### Scenes
 
-Here is a minimal example for a scene:
+A scene imports the models it needs, arranges them on a tree of nodes, optionally animates some nodes, and exports. Node transforms (`translation` in voxels, `rotation` as a `Quat`, `scale` as a `Vec3`) apply to a node's whole subtree, so a model gets its own transform by living on its own child node. Node, mesh and animation names must each be unique within the scene.
 
 ```python
 # voxels/scenes/furniture.py
@@ -139,13 +146,39 @@ from ..models.furniture import chair
 
 scene = Scene()
 root = scene.create_root_node("root")
-root.add_model("chair", chair.model)
+controller = root.create_child_node("spinner")
+
+controller.add_model("chair", chair.model)
+
+spin = scene.create_anim("spin")
+spin.add_rotation(controller, [0.0, 4.0], [Quat.IDENTITY, Quat.from_rotation_y(360)])
 
 scene.export_glb("assets/glb/furniture.glb")
 ```
 
-If the user asks for it, you can directly put the call to `export` in this file. Here, it is saving the scene as a `.glb` file in their assets folder.
+`add_translation` and `add_scale` follow the same shape as `add_rotation`, with `Vec3` outputs.
+
+If the user asks for it, keep the `export_glb` call in the scene file as above; otherwise call it from your preview script.
 
 ## Previewing
 
-Once you think you are done with a model or a scene, you must render it to `.png`s to preview it. You can write an inline script for this purpose, using `python -c`, `print`ing the resulting `RenderOutput` object and then reading the `.png`s.
+Once you think a model or scene is done, you **must** render it to `.png` and look at the result, then adjust and re-render. Repeat until it reads correctly from every angle — this loop is the core of the workflow, not an afterthought.
+
+Render a single model with `model.render(angles)`, or a whole scene (optionally at animation keyframes) with `scene.render(...)`. A `CameraAngle` is a `(yaw, pitch)` in degrees; a sensible default coverage set is three three-quarter views:
+
+```python
+angles = [CameraAngle(45, 25), CameraAngle(225, 25), CameraAngle(45, 70)]
+```
+
+`render` returns a `RenderOutput`; read the PNGs it points to via `.files`. Write an inline script, emit the paths, then look at them:
+
+```sh
+python -c "
+from voxels import CameraAngle
+from scenes.furniture import scene
+out = scene.render([CameraAngle(45, 25), CameraAngle(225, 25), CameraAngle(45, 70)])
+for f in out.files: print(f)
+"
+```
+
+Rendering runs a headless GPU renderer. If it fails for lack of a GPU/EGL in a constrained environment, fall back to exporting the `.glb`, reason about the geometry, and tell the user that rendering is unavailable there.
