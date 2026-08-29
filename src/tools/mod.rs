@@ -4,6 +4,7 @@ mod animation;
 mod glb;
 mod gltf;
 mod meshing;
+mod raster;
 mod rendering;
 mod scene_graph;
 mod utils;
