@@ -44,7 +44,8 @@ voxels
 │   └── ...
 ├── models
 │   ├── furniture
-│   │   └── chair.py
+│   │   ├── chair.py
+│   │   └── ...
 │   └── ...
 ├── scenes
 │   ├── furniture.py
@@ -52,6 +53,97 @@ voxels
 └── GUIDELINES.md
 ```
 
-`models/` can be further divided into subfolders, if the project size grows too large, to group sets of `Model`s used in a given `Scene`, or similar `Model`s, for example.
+Use `GUIDELINES.md` to store general guidelines for keeping consistency between models. These guidelines can be user or agent provided.
 
+## File structure
 
+This section uses the project structure above.
+
+### Palettes
+
+Here's an example of a palette, that would be used for a set of simple wood furniture: 
+
+```python
+# voxels/palettes/furniture.py
+
+from voxels import *
+
+palette = Palette()
+wood_light = palette.add_material(Color(133, 94, 66), roughness=0.65)
+wood_dark = palette.add_material(Color(92, 61, 40), roughness=0.65)
+metal = palette.add_material(Color(180, 180, 190), roughness=0.25, metallic=1.0)
+cushion = palette.add_material(Color(150, 30, 30), roughness=0.9)
+```
+
+Make sure to bind each material to a variable.
+
+### Models
+
+Here's an example of a model, a simple chair making use of the previously defined palette:
+
+```python
+# voxels/models/furniture/chair.py
+
+from voxels import *
+
+from ...palettes.furniture import *
+
+model = Model(Dimensions(16, 16, 16), palette, Pivot.Corner)
+
+# Front legs: floor up to the underside of the seat.
+model.aabb(wood_light, (3, 0, 3), (4, 5, 4))
+model.aabb(wood_light, (11, 0, 3), (12, 5, 4))
+
+# Back legs: run the full height, continuing above the seat as the backrest posts.
+model.aabb(wood_light, (3, 0, 9), (4, 15, 10))
+model.aabb(wood_light, (11, 0, 9), (12, 15, 10))
+
+# Stretchers bracing the legs.
+model.aabb(wood_light, (5, 2, 3), (10, 3, 4))
+model.aabb(wood_light, (5, 2, 9), (10, 3, 10))
+model.aabb(wood_light, (3, 2, 5), (4, 3, 8))
+model.aabb(wood_light, (11, 2, 5), (12, 3, 8))
+
+# Seat slab.
+model.aabb(wood_dark, (3, 6, 3), (12, 7, 10))
+
+# Seat cushion pad, inset from the front and side edges.
+model.aabb(cushion, (4, 8, 4), (11, 8, 8))
+
+# Backrest panel between the back posts.
+model.aabb(wood_dark, (5, 9, 9), (10, 14, 10))
+
+# Rivet accents where the legs meet the seat.
+model.put(metal, (3, 5, 3))
+model.put(metal, (12, 5, 3))
+model.put(metal, (3, 6, 10))
+model.put(metal, (12, 6, 10))
+
+# Rev 1: the seat slab extended beyond the backrest
+```
+
+Be sure to label each logical block with what they are supposed to code for. You may use control flow constructs (loops, if statements, lists...) to help if needed. Add a short, numbered comment for each revision the user asks you to do on that model.
+
+### Scenes
+
+Here is a minimal example for a scene:
+
+```python
+# voxels/scenes/furniture.py
+
+from voxels import *
+
+from ..models.furniture import chair
+
+scene = Scene()
+root = scene.create_root_node("root")
+root.add_model("chair", chair.model)
+
+scene.export("assets/glb/furniture.glb")
+```
+
+If the user asks for it, you can directly put the call to `export` in this file. Here, it is saving the scene as a `.glb` file in their assets folder.
+
+## Previewing
+
+Once you think you are done with a model or a scene, you can render it to `.png`s to preview it. You can write 

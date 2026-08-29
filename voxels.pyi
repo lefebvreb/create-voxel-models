@@ -394,6 +394,10 @@ class RenderOutput:
     """
     The output of a render.
     """
+    def __str__(self, /) -> str:
+        """
+        Print all file paths one after the other, one per line.
+        """
     @property
     def files(self, /) -> list[Path]:
         """

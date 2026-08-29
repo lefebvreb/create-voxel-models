@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter, Result as FmtResult};
 use std::path::PathBuf;
 
 use pyo3::exceptions::PyValueError;
@@ -44,4 +45,24 @@ impl CameraAngle {
 pub struct RenderOutput {
     /// Paths of the written PNG files, ordered by keyframe time then by camera angle.
     pub files: Vec<PathBuf>,
+}
+
+#[pymethods]
+impl RenderOutput {
+    /// Print all file paths one after the other, one per line.
+    pub fn __str__(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl Display for RenderOutput {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        if let Some((last, head)) = self.files.split_last() {
+            for file in head {
+                writeln!(f, "{}", file.display())?;
+            }
+            write!(f, "{}", last.display())?;
+        }
+        Ok(())
+    }
 }
