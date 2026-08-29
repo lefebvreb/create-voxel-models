@@ -164,18 +164,11 @@ If the user asks for it, keep the `export_glb` call in the scene file as above; 
 
 Once you think a model or scene is done, you **must** render it to `.png` and look at the result, then adjust and re-render. Repeat until it reads correctly from every angle — this loop is the core of the workflow, not an afterthought.
 
-Rendering is CLI-only and works from a `.glb` file, not directly from a `Model`/`Scene` object: export first, then render that file with `voxels.main(...)`. It's a pure-CPU rasterizer — no GPU required, works anywhere. A sensible default coverage set is three three-quarter views, `(yaw, pitch)` in degrees:
+Rendering is CLI-only and works from a `.glb` file, not directly from a `Model`/`Scene` object: export first, then run `python -m voxels` on that file. It's a pure-CPU rasterizer — no GPU required, works anywhere. A sensible default coverage set is three three-quarter views, `(yaw, pitch)` in degrees:
 
 ```sh
-python -c "
-from scenes.furniture import scene
-import voxels
-scene.export_glb('.local/furniture.glb')
-voxels.main([
-    '.local/furniture.glb',
-    '--angle', '45,25', '--angle', '225,25', '--angle', '45,70',
-])
-"
+python -c "from scenes.furniture import scene; scene.export_glb('.local/furniture.glb')"
+python -m voxels .local/furniture.glb --angle 45,25 --angle 225,25 --angle 45,70
 ```
 
 This prints the written PNG paths, one per line — read those. Other flags: `--time T` (repeatable, seconds) and `--animation NAME` to pose an animated scene before rendering; `--include NAME`/`--exclude NAME` (repeatable, matched against node or mesh names) to show only or hide parts of the scene; `--out DIR` to control where the PNGs land (a fresh temp directory by default).

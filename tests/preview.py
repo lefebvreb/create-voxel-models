@@ -1,10 +1,18 @@
-import voxels
-from models.chair import scene
+import subprocess
+import sys
 
-scene.export_glb(".local/models/chair.glb")
+from models.test_model import scene
 
-voxels.main([
-    ".local/models/chair.glb",
-    "--angle", "0,0",
-    "--angle", "90,30,1.5",
-])
+scene.export_glb(".local/models/test.glb")
+
+subprocess.run(
+    [
+        sys.executable, "-m", "voxels",
+        ".local/models/test.glb",
+        "--angle", "0,0",
+        "--angle", "90,30,1.5",
+        "--time", "0", "--time", "1", "--time", "2",
+        "--animation", "wiggle",
+    ],
+    check=True,
+)

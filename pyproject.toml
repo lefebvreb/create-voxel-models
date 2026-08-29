@@ -6,3 +6,7 @@ build-backend = "maturin"
 name = "voxels"
 requires-python = ">=3.8"
 dynamic = ["authors", "description", "keywords", "license", "version"]
+
+[tool.maturin]
+python-source = "python"
+module-name = "voxels._voxels"

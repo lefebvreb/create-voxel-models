@@ -15,9 +15,9 @@
 
 use glam::{DVec3, Mat4, Quat, Vec3};
 
-use super::animation::{self, EvaluatedTrs};
 use super::super::glb::{decode_u32s, decode_vec2s, decode_vec3s};
 use super::super::gltf;
+use super::animation::{self, EvaluatedTrs};
 
 /// One mesh primitive's geometry, already transformed into world space by its node's (possibly
 /// animated) transform. `material` indexes `root.materials`.

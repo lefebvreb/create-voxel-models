@@ -460,12 +460,4 @@ class Volume:
     @property
     def thickness(self, /) -> float: ...
 
-def main(args: Sequence[str] |None = None) -> None:
-    """
-    The CLI entry point: `voxels.main()` reads real `sys.argv` (so it works as a
-    `[project.scripts]` target with zero extra glue if one is ever added), or pass `args`
-    explicitly to drive it programmatically/from tests. **`python -m voxels` does not reach this
-    today** - see the module doc comment; call `voxels.main()` directly, or add a
-    `[project.scripts]` entry pointing at it, until/unless that's revisited. Prints each written
-    PNG's path, one per line.
-    """
+def _preview() -> None: ...

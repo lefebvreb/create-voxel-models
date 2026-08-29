@@ -2,7 +2,7 @@
 check:
     cargo +nightly fmt --check
     cargo +stable clippy -- -Dwarnings
-    maturin generate-stubs --out /tmp -- -Awarnings && diff voxels.pyi /tmp/voxels.pyi
+    maturin generate-stubs --out /tmp -- -Awarnings && diff python/voxels/_voxels.pyi /tmp/_voxels.pyi
 
 # Formats the codebase.
 fmt:
@@ -14,7 +14,7 @@ clippy:
 
 # Regenerates the pyi stubs file.
 stubs:
-    maturin generate-stubs --out . -- -Awarnings
+    maturin generate-stubs --out python/voxels -- -Awarnings
 
 # Compiles the project in debug mode, bundles it as a python package and runs all test scripts in a venv.
 test:
@@ -42,4 +42,4 @@ build-skill: check
         f.write('SKILL.md'); \
         f.write('LICENSE'); \
         f.write(wheel, arcname=f'dist/{wheel.name}'); \
-        f.write('voxels.pyi', arcname='references/voxels.pyi');"
+        f.write('python/voxels/_voxels.pyi', arcname='references/voxels.pyi');"

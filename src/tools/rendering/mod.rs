@@ -3,20 +3,18 @@
 //! Renders a `.glb` file to PNGs - a pure-CPU rasterizer (`raster.rs`), no GPU/driver dependency,
 //! assembled from `glb`/`gltf` (reading), `scene_graph`/`animation` (world-space geometry),
 //! `camera` (projection) and `shading`/`texture` (materials). There is no programmatic
-//! `Scene.render`/`Model.render` API any more: export to `.glb` (`Scene.export_glb`), then call
-//! `voxels.main()` (below) on that path.
+//! `Scene.render`/`Model.render` API any more: export to `.glb` (`Scene.export_glb`), then run
+//! `python -m voxels FILE.glb ...`.
 //!
-//! **`python -m voxels` doesn't reach `main` today.** Making a compiled pyo3 extension module
-//! runnable via `-m` needs a `voxels.__main__` submodule that only initializes when specifically
-//! resolved that way - but registering one is only reachable through the *parent* module's own
-//! init (there's no pyo3 hook for "someone is importing `voxels.__main__` specifically"), so
-//! anything placed there runs on every plain `import voxels` too, including the ordinary
-//! `Scene`/`Model`/`Palette` usage that already relies on that import working normally. A
-//! correct lazy-loading submodule needs either a real on-disk `__main__.py` (a Python source
-//! file) or a custom import hook - both bigger and riskier than attempting blind here. `main` is
-//! a plain, always-correct `#[pyfunction]` instead: call `voxels.main()` (reads real `sys.argv`)
-//! or add a one-line `[project.scripts]` entry pointing at it for a real `voxels-preview`-style
-//! command - either gets you a working CLI without this gap.
+//! `python -m voxels` needing a *real* `voxels.__main__` submodule (not something achievable
+//! from pyo3 alone - registering one from `#[pymodule_init]` runs on every plain `import voxels`
+//! too, and still lacks the `__spec__`/loader the import system wants) is why this crate has a
+//! `python/` source directory at all: `python/voxels/__init__.py` re-exports this compiled
+//! module (named `_voxels`, not `voxels` - see `pyproject.toml`'s `module-name`) so `import
+//! voxels` behaves exactly as before, and `python/voxels/__main__.py` is the two lines that
+//! actually make `-m` work, calling `_render` below. The leading underscore just marks it as not
+//! meant to be called directly (it'll still show up under `voxels._voxels` - not worth fighting
+//! pyo3's auto-generated `__all__` over).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -36,6 +34,7 @@ mod texture;
 use camera::Camera;
 use raster::{Framebuffer, ScreenVertex};
 use scene_graph::WorldPrimitive;
+
 use super::utils::encode_png;
 use super::{glb, gltf};
 
@@ -335,22 +334,9 @@ fn default_output_dir() -> PathBuf {
     std::env::temp_dir().join(format!("voxels-{:x}-{nanos:x}-{counter:x}", std::process::id()))
 }
 
-/// The CLI entry point: `voxels.main()` reads real `sys.argv` (so it works as a
-/// `[project.scripts]` target with zero extra glue if one is ever added), or pass `args`
-/// explicitly to drive it programmatically/from tests. **`python -m voxels` does not reach this
-/// today** - see the module doc comment; call `voxels.main()` directly, or add a
-/// `[project.scripts]` entry pointing at it, until/unless that's revisited. Prints each written
-/// PNG's path, one per line.
 #[pyfunction]
-#[pyo3(signature = (args=None))]
-pub fn main(py: Python<'_>, args: Option<Vec<String>>) -> PyResult<()> {
-    let args = match args {
-        Some(args) => args,
-        None => {
-            let argv: Vec<String> = py.import("sys")?.getattr("argv")?.extract()?;
-            argv.into_iter().skip(1).collect()
-        }
-    };
+pub fn _preview(py: Python<'_>) -> PyResult<()> {
+    let args = py.import("sys")?.getattr("argv")?.extract::<Vec<String>>()?.into_iter().skip(1).collect::<Vec<_>>();
     match run_cli(&args) {
         Ok(files) => {
             for file in files {

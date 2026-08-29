@@ -9,7 +9,7 @@ mod tools;
 mod utils;
 
 #[pymodule]
-mod voxels {
+mod _voxels {
     #[pymodule_export]
     use crate::anim::{Anim, Interpolation};
     #[pymodule_export]
@@ -21,5 +21,5 @@ mod voxels {
     #[pymodule_export]
     use crate::scene::{Mesh, Node, Scene};
     #[pymodule_export]
-    use crate::tools::main;
+    use crate::tools::_preview;
 }

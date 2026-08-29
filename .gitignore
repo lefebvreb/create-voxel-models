@@ -1,4 +1,5 @@
 /.venv
 /create-voxel-models.zip
+/python/voxels/_voxels.abi3.so
 /target
 __pycache__
