@@ -460,4 +460,7 @@ class Volume:
     @property
     def thickness(self, /) -> float: ...
 
-def _preview() -> None: ...
+def _preview() -> None:
+    """
+    Entry point for `python -m voxels.preview`.
+    """

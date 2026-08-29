@@ -4,6 +4,7 @@ mod anim;
 mod math;
 mod model;
 mod palette;
+mod preview;
 mod scene;
 mod tools;
 mod utils;
@@ -19,7 +20,7 @@ mod _voxels {
     #[pymodule_export]
     use crate::palette::{Color, Material, Palette, Volume};
     #[pymodule_export]
-    use crate::scene::{Mesh, Node, Scene};
+    use crate::preview::_preview;
     #[pymodule_export]
-    use crate::tools::_preview;
+    use crate::scene::{Mesh, Node, Scene};
 }

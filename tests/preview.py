@@ -7,7 +7,7 @@ scene.export_glb(".local/models/test.glb")
 
 subprocess.run(
     [
-        sys.executable, "-m", "voxels",
+        sys.executable, "-m", "voxels.preview",
         ".local/models/test.glb",
         "--angle", "0,0",
         "--angle", "90,30,1.5",

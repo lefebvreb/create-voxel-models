@@ -4,25 +4,13 @@
 //! assembled from `glb`/`gltf` (reading), `scene_graph`/`animation` (world-space geometry),
 //! `camera` (projection) and `shading`/`texture` (materials). There is no programmatic
 //! `Scene.render`/`Model.render` API any more: export to `.glb` (`Scene.export_glb`), then run
-//! `python -m voxels FILE.glb ...`.
-//!
-//! `python -m voxels` needing a *real* `voxels.__main__` submodule (not something achievable
-//! from pyo3 alone - registering one from `#[pymodule_init]` runs on every plain `import voxels`
-//! too, and still lacks the `__spec__`/loader the import system wants) is why this crate has a
-//! `python/` source directory at all: `python/voxels/__init__.py` re-exports this compiled
-//! module (named `_voxels`, not `voxels` - see `pyproject.toml`'s `module-name`) so `import
-//! voxels` behaves exactly as before, and `python/voxels/__main__.py` is the two lines that
-//! actually make `-m` work, calling `_render` below. The leading underscore just marks it as not
-//! meant to be called directly (it'll still show up under `voxels._voxels` - not worth fighting
-//! pyo3's auto-generated `__all__` over).
+//! `python -m voxels.preview FILE.glb ...` (see `crate::preview`, which parses argv with `clap`
+//! and calls [`run_cli`] below).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use glam::Vec3;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
-use pyo3::types::PyAnyMethods;
-use pyo3::{PyResult, Python, pyfunction};
 
 mod animation;
 mod camera;
@@ -40,39 +28,13 @@ use super::{glb, gltf};
 
 const SUPERSAMPLE: u32 = 2;
 
-/// A camera position, parsed from a `--angle YAW,PITCH[,ZOOM]` CLI flag.
-struct Angle {
-    yaw: f64,
-    pitch: f64,
-    zoom: Option<f64>,
-}
-
-impl Angle {
-    fn parse(s: &str) -> Result<Self, RenderError> {
-        let parts: Vec<&str> = s.split(',').collect();
-        if parts.len() < 2 || parts.len() > 3 {
-            return Err(RenderError::InvalidInput(format!(
-                "invalid --angle {s:?}: expected YAW,PITCH or YAW,PITCH,ZOOM"
-            )));
-        }
-        let number = |raw: &str| -> Result<f64, RenderError> {
-            raw.trim()
-                .parse::<f64>()
-                .map_err(|_| RenderError::InvalidInput(format!("invalid --angle {s:?}: {raw:?} is not a number")))
-        };
-        Ok(Angle {
-            yaw: number(parts[0])?,
-            pitch: number(parts[1])?,
-            zoom: parts.get(2).map(|z| number(z)).transpose()?,
-        })
-    }
-}
-
-/// User-input error (bad CLI args, malformed `.glb` content) vs. environment error (filesystem).
-/// Never a panic here - a panic means a library bug, not a caller mistake. See the
-/// renderer-rewrite plan's "Error handling" section.
+/// User-input error (bad `.glb` content, a runtime problem like an unknown animation name) vs.
+/// environment error (filesystem). Never a panic here - a panic means a library bug, not a
+/// caller mistake. See the renderer-rewrite plan's "Error handling" section. CLI *argument*
+/// parsing errors don't go through this at all any more - `clap` (see `crate::preview`) handles
+/// those itself, printing its own message and exiting before `run_cli` is ever called.
 #[derive(Debug)]
-enum RenderError {
+pub enum RenderError {
     InvalidInput(String),
     Io(String),
 }
@@ -86,7 +48,7 @@ impl From<String> for RenderError {
 /// Renders `glb_bytes` to PNGs under `output_dir`, one per `(time, angle)` pair, in that order.
 fn render_glb(
     glb_bytes: &[u8],
-    angles: &[Angle],
+    angles: &[crate::preview::Angle],
     times: &[f64],
     animation_name: Option<&str>,
     include: &[String],
@@ -256,42 +218,25 @@ fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_s
 }
 
 // --- CLI ---
+//
+// Argument *parsing* is entirely `clap`'s job now (`crate::preview::Args`, built with
+// `#[derive(Parser)]`) - by the time `run_cli` sees an `Args`, it's already well-formed
+// (required fields present, `--angle`/`--time` already the right types). This function only
+// deals with what's left: applying the "no --angle means one default view" fallback and running
+// the actual render, which can still fail at runtime (bad path, bad `.glb` content, filesystem).
 
-fn run_cli(args: &[String]) -> Result<Vec<PathBuf>, RenderError> {
-    let mut path = None;
-    let mut angles = Vec::new();
-    let mut times = Vec::new();
-    let mut animation = None;
-    let mut include = Vec::new();
-    let mut exclude = Vec::new();
-    let mut output = None;
-
-    let mut it = args.iter();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--angle" => angles.push(Angle::parse(next_value(&mut it, "--angle")?)?),
-            "--time" => times.push(
-                next_value(&mut it, "--time")?
-                    .parse::<f64>()
-                    .map_err(|_| RenderError::InvalidInput("invalid --time value".to_string()))?,
-            ),
-            "--animation" => animation = Some(next_value(&mut it, "--animation")?.to_string()),
-            "--include" => include.push(next_value(&mut it, "--include")?.to_string()),
-            "--exclude" => exclude.push(next_value(&mut it, "--exclude")?.to_string()),
-            "--out" => output = Some(PathBuf::from(next_value(&mut it, "--out")?)),
-            other if !other.starts_with("--") && path.is_none() => path = Some(other.to_string()),
-            other => return Err(RenderError::InvalidInput(format!("unrecognized argument {other:?}"))),
-        }
-    }
-    let path = path.ok_or_else(|| {
-        RenderError::InvalidInput(
-            "usage: python -m voxels FILE.glb [--angle YAW,PITCH[,ZOOM]]... [--time T]... \
-             [--animation NAME] [--include NAME]... [--exclude NAME]... [--out DIR]"
-                .to_string(),
-        )
-    })?;
+pub fn run_cli(args: crate::preview::Args) -> Result<Vec<PathBuf>, RenderError> {
+    let crate::preview::Args {
+        glb: path,
+        mut angles,
+        times,
+        anim: animation,
+        include,
+        exclude,
+        out,
+    } = args;
     if angles.is_empty() {
-        angles.push(Angle {
+        angles.push(crate::preview::Angle {
             yaw: 45.0,
             pitch: 25.0,
             zoom: None,
@@ -299,9 +244,9 @@ fn run_cli(args: &[String]) -> Result<Vec<PathBuf>, RenderError> {
     }
     // A bad input path is the caller's mistake (like a bad --angle), not an environment problem
     // - InvalidInput, not Io. Only writing *output* below is treated as an environment failure.
-    let glb_bytes =
-        std::fs::read(&path).map_err(|e| RenderError::InvalidInput(format!("failed to read {path}: {e}")))?;
-    let output_dir = output.unwrap_or_else(default_output_dir);
+    let glb_bytes = std::fs::read(&path)
+        .map_err(|e| RenderError::InvalidInput(format!("failed to read {}: {e}", path.display())))?;
+    let output_dir = out.unwrap_or_else(default_output_dir);
     render_glb(
         &glb_bytes,
         &angles,
@@ -311,12 +256,6 @@ fn run_cli(args: &[String]) -> Result<Vec<PathBuf>, RenderError> {
         &exclude,
         &output_dir,
     )
-}
-
-fn next_value<'a>(it: &mut std::slice::Iter<'a, String>, flag: &str) -> Result<&'a str, RenderError> {
-    it.next()
-        .map(String::as_str)
-        .ok_or_else(|| RenderError::InvalidInput(format!("{flag} needs a value")))
 }
 
 /// A fresh temp directory per invocation. Not a UUID crate: a process id + timestamp + counter
@@ -334,46 +273,25 @@ fn default_output_dir() -> PathBuf {
     std::env::temp_dir().join(format!("voxels-{:x}-{nanos:x}-{counter:x}", std::process::id()))
 }
 
-#[pyfunction]
-pub fn _preview(py: Python<'_>) -> PyResult<()> {
-    let args = py.import("sys")?.getattr("argv")?.extract::<Vec<String>>()?.into_iter().skip(1).collect::<Vec<_>>();
-    match run_cli(&args) {
-        Ok(files) => {
-            for file in files {
-                println!("{}", file.display());
-            }
-            Ok(())
-        }
-        Err(RenderError::InvalidInput(message)) => Err(PyValueError::new_err(message)),
-        Err(RenderError::Io(message)) => Err(PyRuntimeError::new_err(message)),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn angle_parses_yaw_pitch() {
-        let a = Angle::parse("45,25").unwrap();
-        assert_eq!((a.yaw, a.pitch, a.zoom), (45.0, 25.0, None));
+    fn args(path: &str) -> crate::preview::Args {
+        crate::preview::Args {
+            glb: path.into(),
+            angles: Vec::new(),
+            times: Vec::new(),
+            anim: None,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            out: None,
+        }
     }
 
     #[test]
-    fn angle_parses_yaw_pitch_zoom() {
-        let a = Angle::parse("45,25,1.5").unwrap();
-        assert_eq!((a.yaw, a.pitch, a.zoom), (45.0, 25.0, Some(1.5)));
-    }
-
-    #[test]
-    fn angle_rejects_malformed_input() {
-        assert!(Angle::parse("45").is_err());
-        assert!(Angle::parse("a,b").is_err());
-    }
-
-    #[test]
-    fn run_cli_without_a_path_is_an_invalid_input_error_not_a_panic() {
-        let err = run_cli(&[]).err().unwrap();
+    fn run_cli_on_an_unreadable_path_is_an_invalid_input_error_not_a_panic() {
+        let err = run_cli(args("/no/such/file.glb")).err().unwrap();
         assert!(matches!(err, RenderError::InvalidInput(_)));
     }
 }
