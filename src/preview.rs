@@ -1,5 +1,6 @@
 use std::num::ParseFloatError;
 use std::path::PathBuf;
+use std::process::exit;
 use std::str::FromStr;
 
 use clap::Parser;
@@ -7,15 +8,14 @@ use pyo3::types::PyAnyMethods;
 use pyo3::{PyResult, Python, pyfunction};
 use thiserror::Error;
 
-use crate::tools;
+use crate::tools::preview_glb;
 
 #[derive(Parser)]
 #[command(name = "voxels.preview")]
 pub struct Args {
     /// Path to the .glb file to render.
     pub glb: PathBuf,
-    /// Camera position as YAW,PITCH or YAW,PITCH,ZOOM (degrees). Repeatable; a single
-    /// three-quarter view (45,25) is used when omitted entirely.
+    /// Camera positions (repeatable). A single three-quarter view (45,25) is used when omitted entirely.
     #[arg(short = 'a', long = "angle", value_name = "YAW,PITCH[,ZOOM]")]
     pub angles: Vec<Angle>,
     /// Time, in seconds, to sample --animation at. Repeatable; ignored without --animation.
@@ -40,7 +40,7 @@ pub enum ParseAngleError {
     #[error("invalid camera angle format, expected YAW,PITCH[,ZOOM]")]
     InvalidFormat,
     #[error("failed to parse number: {0}")]
-    ParseFloatError(#[from] ParseFloatError)
+    ParseFloatError(#[from] ParseFloatError),
 }
 
 #[derive(Clone, Copy)]
@@ -63,16 +63,28 @@ impl FromStr for Angle {
     }
 }
 
+#[derive(Error, Debug)]
+#[error("{0}")]
+pub struct PreviewError(pub String);
+
 /// Entry point for `python -m voxels.preview`.
 #[pyfunction]
 pub fn _preview(py: Python<'_>) -> PyResult<()> {
-    let mut argv: Vec<String> = py.import("sys")?.getattr("argv")?.extract()?;
+    let mut argv = py.import("sys")?.getattr("argv")?.extract::<Vec<String>>()?;
     if let Some(argv0) = argv.first_mut() {
         *argv0 = "voxels.preview".to_string();
     }
     let args = Args::parse_from(argv);
-    for file in tools::run_cli(args)? {
-        println!("{}", file.display());
+    match preview_glb(args) {
+        Ok(files) => {
+            for file in files {
+                println!("{}", file.display());
+            }
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("error: {err}");
+            exit(1);
+        }
     }
-    Ok(())
 }

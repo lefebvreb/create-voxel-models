@@ -7,4 +7,4 @@ mod rendering;
 mod utils;
 
 pub use glb::export_glb;
-pub use rendering::run_cli;
+pub use rendering::preview_glb;

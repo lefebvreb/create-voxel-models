@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use glam::Vec3;
-use pyo3::PyResult;
-use pyo3::exceptions::{PyRuntimeError, PyValueError};
+
+use crate::preview::PreviewError;
 
 mod animation;
 mod camera;
@@ -31,11 +31,9 @@ use super::{glb, gltf};
 const SUPERSAMPLE: u32 = 2;
 
 /// Renders `glb_bytes` to PNGs under `output_dir`, one per `(time, angle)` pair, in that order.
-/// `ValueError` for bad input (malformed `.glb` content, an unknown animation name) vs.
-/// `RuntimeError` for an environment problem (filesystem) - never a panic, which would mean a
-/// library bug, not a caller mistake. See the renderer-rewrite plan's "Error handling" section.
-/// CLI *argument* parsing errors don't reach here at all - `clap` (see `crate::preview`) handles
-/// those itself, printing its own message and exiting before `run_cli` is ever called.
+/// See `crate::preview::PreviewError`'s doc comment for the error-handling policy - CLI
+/// *argument* parsing errors don't reach here at all, `clap` handles those itself before
+/// `preview_glb` is ever called.
 fn render_glb(
     glb_bytes: &[u8],
     angles: &[crate::preview::Angle],
@@ -44,15 +42,15 @@ fn render_glb(
     include: &[String],
     exclude: &[String],
     output_dir: &Path,
-) -> PyResult<Vec<PathBuf>> {
-    let (root, bin) = glb::read_glb(glb_bytes).map_err(PyValueError::new_err)?;
+) -> Result<Vec<PathBuf>, PreviewError> {
+    let (root, bin) = glb::read_glb(glb_bytes).map_err(PreviewError)?;
 
     let animation = match animation_name {
         Some(name) => Some(
             root.animations
                 .iter()
                 .find(|a| a.name.as_deref() == Some(name))
-                .ok_or_else(|| PyValueError::new_err(format!("no animation named {name:?} in this GLB")))?,
+                .ok_or_else(|| PreviewError(format!("no animation named {name:?} in this .glb file")))?,
         ),
         None => None,
     };
@@ -63,7 +61,7 @@ fn render_glb(
     };
 
     std::fs::create_dir_all(output_dir).map_err(|e| {
-        PyRuntimeError::new_err(format!(
+        PreviewError(format!(
             "failed to create output directory {}: {e}",
             output_dir.display()
         ))
@@ -72,7 +70,7 @@ fn render_glb(
     let mut files = Vec::with_capacity(time_values.len() * angles.len());
     for (time_idx, &time) in time_values.iter().enumerate() {
         let primitives = scene_graph::collect_world_primitives(&root, &bin, animation, time, include, exclude)
-            .map_err(PyValueError::new_err)?;
+            .map_err(PreviewError)?;
         let (min, max) = scene_graph::world_bounds(&primitives);
         let (center, radius) = camera::bounds_center_radius(min, max);
         let base_distance = camera::fit_distance(radius, camera::default_fov_y_rad(), camera::FIT_PADDING);
@@ -81,9 +79,8 @@ fn render_glb(
             let cam = camera::place_camera(center, base_distance, angle.yaw, angle.pitch, angle.zoom);
             let (width, height, pixels) = render_frame(&root, &bin, &primitives, &cam)?;
             let file = output_dir.join(format!("t{time_idx}_a{angle_idx}.png"));
-            std::fs::write(&file, encode_png(width, height, &pixels, png::ColorType::Rgb)).map_err(|e| {
-                PyRuntimeError::new_err(format!("failed to write screenshot to {}: {e}", file.display()))
-            })?;
+            std::fs::write(&file, encode_png(width, height, &pixels, png::ColorType::Rgb))
+                .map_err(|e| PreviewError(format!("failed to write {}: {e}", file.display())))?;
             files.push(file);
         }
     }
@@ -95,7 +92,7 @@ fn render_frame(
     bin: &[u8],
     primitives: &[WorldPrimitive],
     camera: &Camera,
-) -> PyResult<(u32, u32, Vec<u8>)> {
+) -> Result<(u32, u32, Vec<u8>), PreviewError> {
     let screen_size = camera::RESOLUTION * SUPERSAMPLE;
     let mut fb = Framebuffer::new(screen_size, screen_size, shading::clear_color_linear());
     let mut material_cache: HashMap<u32, shading::DecodedMaterial> = HashMap::new();
@@ -164,9 +161,9 @@ fn draw_primitive(
     camera: &Camera,
     screen_size: f32,
     transmissive: bool,
-) -> PyResult<()> {
+) -> Result<(), PreviewError> {
     if let std::collections::hash_map::Entry::Vacant(e) = material_cache.entry(primitive.material) {
-        e.insert(shading::decode_material(root, bin, primitive.material).map_err(PyValueError::new_err)?);
+        e.insert(shading::decode_material(root, bin, primitive.material).map_err(PreviewError)?);
     }
     let material = &material_cache[&primitive.material];
 
@@ -217,7 +214,7 @@ fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_s
 // deals with what's left: applying the "no --angle means one default view" fallback and running
 // the actual render, which can still fail at runtime (bad path, bad `.glb` content, filesystem).
 
-pub fn run_cli(args: crate::preview::Args) -> PyResult<Vec<PathBuf>> {
+pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>, PreviewError> {
     let crate::preview::Args {
         glb: path,
         mut angles,
@@ -234,11 +231,8 @@ pub fn run_cli(args: crate::preview::Args) -> PyResult<Vec<PathBuf>> {
             zoom: None,
         });
     }
-    // A bad input path is the caller's mistake (like a bad --angle), not an environment problem
-    // - ValueError, not RuntimeError. Only writing *output* below is treated as an environment
-    // failure.
     let glb_bytes =
-        std::fs::read(&path).map_err(|e| PyValueError::new_err(format!("failed to read {}: {e}", path.display())))?;
+        std::fs::read(&path).map_err(|e| PreviewError(format!("failed to read {}: {e}", path.display())))?;
     let output_dir = out.unwrap_or_else(default_output_dir);
     render_glb(
         &glb_bytes,
@@ -284,6 +278,6 @@ mod tests {
 
     #[test]
     fn run_cli_on_an_unreadable_path_is_an_error_not_a_panic() {
-        assert!(run_cli(args("/no/such/file.glb")).is_err());
+        assert!(preview_glb(args("/no/such/file.glb")).is_err());
     }
 }

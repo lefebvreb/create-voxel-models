@@ -16,6 +16,9 @@ clippy:
 stubs:
     maturin generate-stubs --out python/voxels -- -Awarnings
 
+# Formats the database, runs clippy and regenerates pyi stubs file.
+clean: fmt clippy stubs
+
 # Compiles the project in debug mode, bundles it as a python package and runs all test scripts in a venv.
 test:
     cargo +stable test
