@@ -8,8 +8,7 @@ use pyo3::{Bound, Py, PyResult, PyTraverseError, PyVisit, pyclass, pymethods};
 use crate::anim::Anim;
 use crate::math::{Quat, Vec3};
 use crate::model::Model;
-use crate::render::{CameraAngle, RenderOutput};
-use crate::tools::{export_glb, render};
+use crate::tools::export_glb;
 use crate::utils::Dict;
 
 /// A tree of nodes, the models attached to them, and any named animations.
@@ -98,33 +97,6 @@ impl Scene {
         let blob = export_glb(slf)?;
         write(path, blob)?;
         Ok(())
-    }
-
-    /// Render the scene from each camera angle and return the image files.
-    ///
-    /// Args:
-    ///     angles: Camera positions to render from; must be non-empty.
-    ///     times: Times, in seconds, to sample `animation` at, one render per time. Ignored
-    ///         unless `animation` is given.
-    ///     animation: Name of the animation to pose the scene with before rendering.
-    ///     include: If given, only nodes and meshes whose names appear here are visible.
-    ///     exclude: Names of nodes and meshes to hide.
-    ///
-    /// Returns:
-    ///     The written PNG files, one per time and angle.
-    ///
-    /// Raises:
-    ///     ValueError: If `angles` is empty or `animation` names no animation on the scene.
-    #[pyo3(signature = (angles, *, times = vec![], animation = None, include = None, exclude = None))]
-    pub fn render(
-        slf: Bound<Self>,
-        angles: Vec<CameraAngle>,
-        times: Vec<f64>,
-        animation: Option<String>,
-        include: Option<Vec<String>>,
-        exclude: Option<Vec<String>>,
-    ) -> PyResult<RenderOutput> {
-        render(slf, angles, times, animation, include, exclude)
     }
 
     fn __traverse__(&self, visit: PyVisit) -> Result<(), PyTraverseError> {

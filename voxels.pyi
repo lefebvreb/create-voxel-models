@@ -1,6 +1,5 @@
 from collections.abc import Sequence
 from os import PathLike
-from pathlib import Path
 from typing import Final, final
 
 @final
@@ -56,28 +55,6 @@ class Anim:
     def name(self, /) -> str: ...
     @property
     def scene(self, /) -> Scene: ...
-
-@final
-class CameraAngle:
-    """
-    A camera position for rendering, orbiting the framed subject at a fitted distance.
-    """
-    def __new__(cls, /, yaw: float, pitch: float, *, zoom: float |None = None) -> CameraAngle:
-        """
-        Define a camera angle.
-        
-        Args:
-            yaw: Angle around the vertical axis, in degrees.
-            pitch: Angle above the horizon, in degrees; clamped to just under ±90.
-            zoom: Magnification relative to the automatic framing; above 1.0 zooms in. The
-                subject is fitted to the frame when omitted.
-        """
-    @property
-    def pitch(self, /) -> float: ...
-    @property
-    def yaw(self, /) -> float: ...
-    @property
-    def zoom(self, /) -> float |None: ...
 
 @final
 class Color:
@@ -240,12 +217,6 @@ class Model:
         """
         Set the voxel at `p`, or clear it when `material` is `None`.
         """
-    def render(self, /, angles: Sequence[CameraAngle]) -> RenderOutput:
-        """
-        Render the model on its own from each camera angle and return the image files.
-        
-        A shortcut for wrapping the model in a one-node scene; see `Scene.render`.
-        """
     def sphere(self, /, material: Material |None, c: tuple[int, int, int], r: int) -> None:
         """
         Fill a sphere of radius `r`, in voxels, centered on `c`.
@@ -390,21 +361,6 @@ class Quat:
         """
 
 @final
-class RenderOutput:
-    """
-    The output of a render.
-    """
-    def __str__(self, /) -> str:
-        """
-        Print all file paths one after the other, one per line.
-        """
-    @property
-    def files(self, /) -> list[Path]:
-        """
-        Paths of the written PNG files, ordered by keyframe time then by camera angle.
-        """
-
-@final
 class Scene:
     """
     A tree of nodes, the models attached to them, and any named animations.
@@ -434,24 +390,6 @@ class Scene:
     def export_glb(self, /, path: str |PathLike[str]) -> None:
         """
         Export the scene to a binary glTF (`.glb`) file at `path`.
-        """
-    def render(self, /, angles: Sequence[CameraAngle], *, times: Sequence[float] = ..., animation: str |None = None, include: Sequence[str] |None = None, exclude: Sequence[str] |None = None) -> RenderOutput:
-        """
-        Render the scene from each camera angle and return the image files.
-        
-        Args:
-            angles: Camera positions to render from; must be non-empty.
-            times: Times, in seconds, to sample `animation` at, one render per time. Ignored
-                unless `animation` is given.
-            animation: Name of the animation to pose the scene with before rendering.
-            include: If given, only nodes and meshes whose names appear here are visible.
-            exclude: Names of nodes and meshes to hide.
-        
-        Returns:
-            The written PNG files, one per time and angle.
-        
-        Raises:
-            ValueError: If `angles` is empty or `animation` names no animation on the scene.
         """
 
 @final
@@ -521,3 +459,13 @@ class Volume:
     def distance(self, /) -> float: ...
     @property
     def thickness(self, /) -> float: ...
+
+def main(args: Sequence[str] |None = None) -> None:
+    """
+    The CLI entry point: `voxels.main()` reads real `sys.argv` (so it works as a
+    `[project.scripts]` target with zero extra glue if one is ever added), or pass `args`
+    explicitly to drive it programmatically/from tests. **`python -m voxels` does not reach this
+    today** - see the module doc comment; call `voxels.main()` directly, or add a
+    `[project.scripts]` entry pointing at it, until/unless that's revisited. Prints each written
+    PNG's path, one per line.
+    """

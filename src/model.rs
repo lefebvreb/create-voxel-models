@@ -1,12 +1,9 @@
 use either::Either;
 use pyo3::exceptions::PyValueError;
-use pyo3::{Bound, Py, PyResult, Python, pyclass, pymethods};
+use pyo3::{Py, PyResult, Python, pyclass, pymethods};
 
 use crate::math::{Int3, Vec3};
 use crate::palette::{Material, MaterialCode, Palette};
-use crate::render::{CameraAngle, RenderOutput};
-use crate::scene::{Node, Scene};
-use crate::tools::render;
 
 /// The size of a model's voxel grid along each axis.
 #[pyclass(get_all, from_py_object, frozen)]
@@ -287,16 +284,6 @@ impl Model {
             }
         }
         Ok(())
-    }
-
-    /// Render the model on its own from each camera angle and return the image files.
-    ///
-    /// A shortcut for wrapping the model in a one-node scene; see `Scene.render`.
-    pub fn render(slf: Bound<Self>, angles: Vec<CameraAngle>) -> PyResult<RenderOutput> {
-        let scene = Bound::new(slf.py(), Scene::default())?;
-        let node = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
-        Node::add_model(node.bind(slf.py()).clone(), "model".to_string(), slf.unbind(), None)?;
-        render(scene, angles, vec![], None, None, None)
     }
 }
 

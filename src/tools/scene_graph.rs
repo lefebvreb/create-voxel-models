@@ -1,10 +1,5 @@
 // <ai-owned/>
 
-// Not wired into anything outside this module's own tests yet - the rasterizer core (the next
-// piece of the CPU-rasterizer rewrite) is what consumes `collect_world_primitives`. Left in as a
-// self-contained, independently reviewable/testable step.
-#![allow(dead_code)]
-
 //! Walks a parsed glTF document's node tree, composing world-space transforms (animated where an
 //! `Animation` applies, static otherwise) and collecting every visible mesh primitive's geometry
 //! already transformed into world space - the input the rasterizer core and bounds computation

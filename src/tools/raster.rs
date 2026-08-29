@@ -1,10 +1,5 @@
 // <ai-owned/>
 
-// Not wired into anything outside this module's own tests yet - shading and the final
-// renderer-rewrite (the next pieces of the CPU-rasterizer rewrite) are what call this. Left in
-// as a self-contained, independently reviewable/testable step.
-#![allow(dead_code)]
-
 //! A minimal software triangle rasterizer: an edge-function scanline fill with a z-buffer and
 //! perspective-correct attribute interpolation, plus a linear-space supersample-downsample for
 //! antialiasing. Deliberately generic over *what* gets interpolated (`ScreenVertex<N>`'s `N`
@@ -65,16 +60,17 @@ pub fn signed_area<const N: usize>(v0: &ScreenVertex<N>, v1: &ScreenVertex<N>, v
 }
 
 /// Fills triangle `(v0, v1, v2)` into `fb`, depth-testing each covered pixel (closer wins) and
-/// calling `shade` with its screen-space pixel center and perspective-correct interpolated
-/// attributes. `shade` returns `None` to discard the fragment without writing color or depth
-/// (e.g. an alpha cutout), or `Some(color)` to write it. Fills either winding order; a
-/// (near-)zero-area triangle is treated as degenerate and skipped.
+/// calling `shade` with its screen-space pixel center, perspective-correct interpolated
+/// attributes, and the color already in the framebuffer at that pixel (so a transmissive/blended
+/// fragment can composite against whatever was drawn there first). `shade` returns `None` to
+/// discard the fragment without writing color or depth (e.g. an alpha cutout), or `Some(color)`
+/// to write it. Fills either winding order; a (near-)zero-area triangle is skipped as degenerate.
 pub fn rasterize_triangle<const N: usize>(
     fb: &mut Framebuffer,
     v0: ScreenVertex<N>,
     v1: ScreenVertex<N>,
     v2: ScreenVertex<N>,
-    mut shade: impl FnMut(f32, f32, [f32; N]) -> Option<[f32; 3]>,
+    mut shade: impl FnMut(f32, f32, [f32; N], [f32; 3]) -> Option<[f32; 3]>,
 ) {
     let area = signed_area(&v0, &v1, &v2);
     if area.abs() < f32::EPSILON {
@@ -121,7 +117,7 @@ pub fn rasterize_triangle<const N: usize>(
             let attributes: [f32; N] =
                 std::array::from_fn(|i| (b0 * attrs_over_w[0][i] + b1 * attrs_over_w[1][i] + b2 * attrs_over_w[2][i]) / inv_w);
 
-            if let Some(color) = shade(px, py, attributes) {
+            if let Some(color) = shade(px, py, attributes, fb.color[index]) {
                 fb.color[index] = color;
                 fb.depth[index] = depth;
             }
@@ -195,7 +191,7 @@ mod tests {
             vertex(0.0, 0.0, 0.5, 1.0),
             vertex(4.0, 0.0, 0.5, 1.0),
             vertex(0.0, 4.0, 0.5, 1.0),
-            |_, _, _| Some([1.0, 1.0, 1.0]),
+            |_, _, _, _| Some([1.0, 1.0, 1.0]),
         );
         assert_eq!(fb.color[fb.index(0, 0)], [1.0, 1.0, 1.0]); // inside
         assert_eq!(fb.color[fb.index(3, 3)], [0.0, 0.0, 0.0]); // outside (bottom-right corner)
@@ -209,7 +205,7 @@ mod tests {
             vertex(0.0, 0.0, 0.5, 1.0),
             vertex(4.0, 0.0, 0.5, 1.0),
             vertex(0.0, 4.0, 0.5, 1.0),
-            |_, _, _| Some([1.0, 0.0, 0.0]),
+            |_, _, _, _| Some([1.0, 0.0, 0.0]),
         );
         let mut fb_cw = Framebuffer::new(4, 4, [0.0, 0.0, 0.0]);
         rasterize_triangle(
@@ -217,7 +213,7 @@ mod tests {
             vertex(0.0, 0.0, 0.5, 1.0),
             vertex(0.0, 4.0, 0.5, 1.0),
             vertex(4.0, 0.0, 0.5, 1.0),
-            |_, _, _| Some([1.0, 0.0, 0.0]),
+            |_, _, _, _| Some([1.0, 0.0, 0.0]),
         );
         assert_eq!(fb_ccw.color[fb_ccw.index(0, 0)], fb_cw.color[fb_cw.index(0, 0)]);
     }
@@ -225,7 +221,7 @@ mod tests {
     #[test]
     fn degenerate_triangle_does_not_panic_or_draw() {
         let mut fb = Framebuffer::new(4, 4, [0.5, 0.5, 0.5]);
-        rasterize_triangle(&mut fb, vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), |_, _, _| {
+        rasterize_triangle(&mut fb, vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), vertex(1.0, 1.0, 0.5, 1.0), |_, _, _, _| {
             Some([1.0, 0.0, 0.0])
         });
         assert!(fb.color.iter().all(|&c| c == [0.5, 0.5, 0.5]));
@@ -238,11 +234,11 @@ mod tests {
             move |fb: &mut Framebuffer| {
                 rasterize_triangle(fb, vertex(0.0, 0.0, depth, 1.0), vertex(4.0, 0.0, depth, 1.0), vertex(0.0, 4.0, depth, 1.0), {
                     let color = color;
-                    move |_, _, _| Some(color)
+                    move |_, _, _, _| Some(color)
                 });
                 rasterize_triangle(fb, vertex(4.0, 0.0, depth, 1.0), vertex(4.0, 4.0, depth, 1.0), vertex(0.0, 4.0, depth, 1.0), {
                     let color = color;
-                    move |_, _, _| Some(color)
+                    move |_, _, _, _| Some(color)
                 });
             }
         };
@@ -255,7 +251,7 @@ mod tests {
     #[test]
     fn shade_returning_none_discards_without_writing_color_or_depth() {
         let mut fb = Framebuffer::new(4, 4, [0.25, 0.25, 0.25]);
-        rasterize_triangle(&mut fb, vertex(0.0, 0.0, 0.1, 1.0), vertex(4.0, 0.0, 0.1, 1.0), vertex(0.0, 4.0, 0.1, 1.0), |_, _, _| None);
+        rasterize_triangle(&mut fb, vertex(0.0, 0.0, 0.1, 1.0), vertex(4.0, 0.0, 0.1, 1.0), vertex(0.0, 4.0, 0.1, 1.0), |_, _, _, _| None);
         assert!(fb.color.iter().all(|&c| c == [0.25, 0.25, 0.25]));
         assert!(fb.depth.iter().all(|&d| d == f32::INFINITY));
     }
@@ -287,7 +283,7 @@ mod tests {
             attributes: [0.0],
         };
         let mut sampled = None;
-        rasterize_triangle(&mut fb, v0, v1, v2, |_, _, attrs| {
+        rasterize_triangle(&mut fb, v0, v1, v2, |_, _, attrs, _| {
             sampled = Some(attrs[0]);
             Some([1.0, 1.0, 1.0])
         });

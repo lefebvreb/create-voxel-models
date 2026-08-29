@@ -631,7 +631,6 @@ fn pad(data: &[u8], fill: u8) -> Vec<u8> {
 /// `serde_json` tolerates as whitespace) and its BIN chunk (still padded with trailing zero
 /// bytes, harmless since accessors only ever read their own declared `byteOffset`/`byteLength`
 /// range - never the padding beyond it).
-#[allow(dead_code)] // only `read_glb` calls this so far; see its own doc comment
 fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     if data.len() < 12 {
         return Err("not a GLB file: shorter than the 12-byte header".to_string());
@@ -656,7 +655,6 @@ fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     Ok((json, bin))
 }
 
-#[allow(dead_code)] // only `read_glb_container` calls this so far; see `read_glb`'s doc comment
 fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), String> {
     if data.len() < 8 {
         return Err("truncated GLB chunk header".to_string());
@@ -679,7 +677,6 @@ fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), Str
 /// Parses a GLB file's bytes into its glTF document and binary buffer. The inverse of
 /// `export_glb` + `write_glb_container`, and the entry point for everything downstream (node
 /// traversal, meshing, animation) that reads a `.glb` path rather than an in-memory `Scene`.
-#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
 pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>), String> {
     let (json, bin) = read_glb_container(data)?;
     let root: gltf::Root = serde_json::from_slice(json).map_err(|e| format!("invalid glTF JSON: {e}"))?;
@@ -736,7 +733,6 @@ pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Resu
 }
 
 /// Decodes a `COMPONENT_TYPE_UNSIGNED_INT` SCALAR accessor (mesh indices).
-#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
 pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<u32>, String> {
     let (accessor, bytes) = accessor_bytes(root, bin, accessor_index)?;
     if accessor.component_type != gltf::COMPONENT_TYPE_UNSIGNED_INT {
@@ -751,21 +747,18 @@ pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result
 
 /// Decodes a VEC2 float accessor (uvs). Not consumed yet - node traversal/meshing is what reads
 /// uvs; left in now since it's the same shape as its `decode_vec3s`/`decode_vec4s` siblings.
-#[allow(dead_code)]
 pub fn decode_vec2s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 2]>, String> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<2>().0.to_vec())
 }
 
 /// Decodes a VEC3 float accessor (positions, normals, translation/scale animation output).
-#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
 pub fn decode_vec3s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 3]>, String> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<3>().0.to_vec())
 }
 
 /// Decodes a VEC4 float accessor (rotation animation output).
-#[allow(dead_code)] // wired in by node traversal, the next piece of the CPU-rasterizer rewrite
 pub fn decode_vec4s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 4]>, String> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<4>().0.to_vec())

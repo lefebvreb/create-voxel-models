@@ -1,10 +1,5 @@
 // <ai-owned/>
 
-// Not wired into anything outside this module's own tests yet - node traversal (the next piece
-// of the CPU-rasterizer rewrite) is what calls `evaluate_node_trs`. Left in as a self-contained,
-// independently reviewable/testable step rather than landing all at once with that rewrite.
-#![allow(dead_code)]
-
 //! Evaluates a parsed glTF animation's `channels`/`samplers` at an arbitrary time `t`, producing
 //! a node's local translation/rotation/scale. Pure functions operating on `gltf::Root` + the
 //! binary buffer (via `glb.rs`'s accessor decoders) - no pyo3, independently testable like the
