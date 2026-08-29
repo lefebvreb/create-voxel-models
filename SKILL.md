@@ -12,7 +12,7 @@ metadata:
 
 This skill contains a python package that enables programmatic creation, edition and animation of voxel models, organized in hierarchical scenes. Similar to how the glTF format is structured, but with voxels. Voxels have colors and PBR properties, with up to 255 different materials per model.
 
-# Installation
+## Installation
 
 Before anything else, you must make sure the `voxels` package is installed, or install it yourself. It's up to you to decide where and how to install the `.whl` file bundled with this skill in the `dist/` directory. 
 
@@ -20,7 +20,7 @@ If operating in an user's machine, you should probably install it in a venv. Con
 
 If operating in a sandbox, it's probably fine to install this package globally. Be sure to follow all instructions in your prompts.
 
-# Package Overview
+## Package Overview
 
 There are a few major concepts:
 * `Palette`s contain `Material`s, which are a `Color` and PBR properties (such as `metallic`, `transmission`...).
@@ -31,15 +31,25 @@ Finally, `Scene`s can be exported to `.glb` files, and they can be previewed to 
 
 You can get a full reference of what APIs this package offers in the `reference/voxels.pyi` file bundled with this skill.
 
-# Project structuring
+# Usage
 
-`Palette`s can and should be shared between `Model`s. `Model`s are composable and should be easily accessible. This naturally leads to adopting a project structure like:
+## Project structuring
+
+`Palette`s can and should be shared between `Model`s. `Model`s are composable and should be easily accessible. This naturally leads to adopting such a project structure as:
 
 ```
-palettes/
-models/
-scenes/
-GUIDELINES.md
+voxels
+├── palettes
+│   ├── furniture.py
+│   └── ...
+├── models
+│   ├── furniture
+│   │   └── chair.py
+│   └── ...
+├── scenes
+│   ├── furniture.py
+│   └── ...
+└── GUIDELINES.md
 ```
 
 `models/` can be further divided into subfolders, if the project size grows too large, to group sets of `Model`s used in a given `Scene`, or similar `Model`s, for example.
