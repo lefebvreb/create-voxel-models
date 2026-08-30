@@ -13,6 +13,7 @@
 //! intent. With no `include` list, everything starts included; `exclude` alone still works as a
 //! deny-list.
 
+use anyhow::{Context, Result};
 use glam::{DVec3, Mat4, Quat, Vec3};
 
 use super::super::glb::{decode_u32s, decode_vec2s, decode_vec3s};
@@ -39,12 +40,12 @@ pub fn collect_world_primitives(
     time: f64,
     include: &[String],
     exclude: &[String],
-) -> Result<Vec<WorldPrimitive>, String> {
+) -> Result<Vec<WorldPrimitive>> {
     let scene_index = root.scene.unwrap_or(0);
     let scene = root
         .scenes
         .get(scene_index as usize)
-        .ok_or_else(|| format!("glTF document has no scene at index {scene_index}"))?;
+        .with_context(|| format!("glTF document has no scene at index {scene_index}"))?;
 
     let mut primitives = Vec::new();
     let included_by_default = include.is_empty();
@@ -79,11 +80,11 @@ fn traverse(
     include: &[String],
     exclude: &[String],
     out: &mut Vec<WorldPrimitive>,
-) -> Result<(), String> {
+) -> Result<()> {
     let node = root
         .nodes
         .get(node_index as usize)
-        .ok_or_else(|| format!("node index {node_index} is out of range"))?;
+        .with_context(|| format!("node index {node_index} is out of range"))?;
     let mesh_name = node
         .mesh
         .and_then(|m| root.meshes.get(m as usize))
@@ -103,7 +104,7 @@ fn traverse(
         let mesh = root
             .meshes
             .get(mesh_index as usize)
-            .ok_or_else(|| format!("mesh index {mesh_index} is out of range"))?;
+            .with_context(|| format!("mesh index {mesh_index} is out of range"))?;
         for primitive in &mesh.primitives {
             out.push(world_primitive(root, bin, primitive, world_matrix)?);
         }
@@ -152,7 +153,7 @@ fn world_primitive(
     bin: &[u8],
     primitive: &gltf::Primitive,
     world_matrix: Mat4,
-) -> Result<WorldPrimitive, String> {
+) -> Result<WorldPrimitive> {
     let local_positions = decode_vec3s(root, bin, primitive.attributes.position)?;
     let local_normals = decode_vec3s(root, bin, primitive.attributes.normal)?;
     let uvs = decode_vec2s(root, bin, primitive.attributes.texcoord_0)?;
@@ -472,7 +473,9 @@ mod tests {
     #[test]
     fn errors_on_missing_scene_rather_than_panicking() {
         let root = gltf::Root::default(); // no scenes at all
-        let err = collect_world_primitives(&root, &[], None, 0.0, &[], &[]).unwrap_err();
+        let err = collect_world_primitives(&root, &[], None, 0.0, &[], &[])
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("scene"));
     }
 

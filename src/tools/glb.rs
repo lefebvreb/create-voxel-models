@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
+use anyhow::{Context, Result, bail};
 use png::ColorType;
 use pyo3::{Bound, Py, PyResult};
 
@@ -623,7 +624,7 @@ fn pad(data: &[u8], fill: u8) -> Vec<u8> {
 
 // --- GLB reading: the inverse of the writing above ---
 //
-// Plain `Result<_, String>`, not `PyResult`: this is a malformed-input case (a bad path, or a
+// Plain `anyhow::Result`, not `PyResult`: this is a malformed-input case (a bad path, or a
 // file that isn't valid GLB/glTF), which belongs to whoever exposes this to Python to turn into a
 // `PyValueError` with the caller's context - not something this pyo3-free module should decide.
 
@@ -631,25 +632,23 @@ fn pad(data: &[u8], fill: u8) -> Vec<u8> {
 /// `serde_json` tolerates as whitespace) and its BIN chunk (still padded with trailing zero
 /// bytes, harmless since accessors only ever read their own declared `byteOffset`/`byteLength`
 /// range - never the padding beyond it).
-fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
+fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8])> {
     if data.len() < 12 {
-        return Err("not a GLB file: shorter than the 12-byte header".to_string());
+        bail!("not a GLB file: shorter than the 12-byte header");
     }
     if &data[0..4] != b"glTF" {
-        return Err("not a GLB file: missing the 'glTF' magic bytes".to_string());
+        bail!("not a GLB file: missing the 'glTF' magic bytes");
     }
     let version = u32::from_le_bytes(data[4..8].try_into().unwrap());
     if version != 2 {
-        return Err(format!(
-            "unsupported glTF container version {version} (only version 2 is supported)"
-        ));
+        bail!("unsupported glTF container version {version} (only version 2 is supported)");
     }
     let declared_len = u32::from_le_bytes(data[8..12].try_into().unwrap()) as usize;
     if declared_len != data.len() {
-        return Err(format!(
+        bail!(
             "GLB header declares a total length of {declared_len} bytes, but the file is {} bytes",
             data.len()
-        ));
+        );
     }
 
     let (json, rest) = read_chunk(&data[12..], *b"JSON")?;
@@ -661,21 +660,21 @@ fn read_glb_container(data: &[u8]) -> Result<(&[u8], &[u8]), String> {
     Ok((json, bin))
 }
 
-fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), String> {
+fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8])> {
     if data.len() < 8 {
-        return Err("truncated GLB chunk header".to_string());
+        bail!("truncated GLB chunk header");
     }
     let chunk_len = u32::from_le_bytes(data[0..4].try_into().unwrap()) as usize;
     let chunk_type = &data[4..8];
     if chunk_type != expected_type {
-        return Err(format!(
+        bail!(
             "expected a {:?} chunk, found {:?}",
             String::from_utf8_lossy(&expected_type),
             String::from_utf8_lossy(chunk_type)
-        ));
+        );
     }
     if data.len() < 8 + chunk_len {
-        return Err("GLB chunk declares a length longer than the remaining file".to_string());
+        bail!("GLB chunk declares a length longer than the remaining file");
     }
     Ok((&data[8..8 + chunk_len], &data[8 + chunk_len..]))
 }
@@ -683,9 +682,9 @@ fn read_chunk(data: &[u8], expected_type: [u8; 4]) -> Result<(&[u8], &[u8]), Str
 /// Parses a GLB file's bytes into its glTF document and binary buffer. The inverse of
 /// `export_glb` + `write_glb_container`, and the entry point for everything downstream (node
 /// traversal, meshing, animation) that reads a `.glb` path rather than an in-memory `Scene`.
-pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>), String> {
+pub fn read_glb(data: &[u8]) -> Result<(gltf::Root, Vec<u8>)> {
     let (json, bin) = read_glb_container(data)?;
-    let root: gltf::Root = serde_json::from_slice(json).map_err(|e| format!("invalid glTF JSON: {e}"))?;
+    let root: gltf::Root = serde_json::from_slice(json).context("invalid glTF JSON")?;
     Ok((root, bin.to_vec()))
 }
 
@@ -699,18 +698,18 @@ fn accessor_bytes<'a>(
     root: &'a gltf::Root,
     bin: &'a [u8],
     accessor_index: u32,
-) -> Result<(&'a gltf::Accessor, &'a [u8]), String> {
+) -> Result<(&'a gltf::Accessor, &'a [u8])> {
     let accessor = root
         .accessors
         .get(accessor_index as usize)
-        .ok_or_else(|| format!("accessor index {accessor_index} is out of range"))?;
+        .with_context(|| format!("accessor index {accessor_index} is out of range"))?;
     let view = root
         .buffer_views
         .get(accessor.buffer_view as usize)
-        .ok_or_else(|| format!("bufferView index {} is out of range", accessor.buffer_view))?;
+        .with_context(|| format!("bufferView index {} is out of range", accessor.buffer_view))?;
     let start = view.byte_offset as usize;
     let end = start + view.byte_length as usize;
-    let bytes = bin.get(start..end).ok_or_else(|| {
+    let bytes = bin.get(start..end).with_context(|| {
         format!(
             "bufferView [{start}, {end}) is out of bounds for a {}-byte buffer",
             bin.len()
@@ -719,29 +718,29 @@ fn accessor_bytes<'a>(
     Ok((accessor, bytes))
 }
 
-fn components_per_element(type_: &str) -> Result<usize, String> {
+fn components_per_element(type_: &str) -> Result<usize> {
     match type_ {
         "SCALAR" => Ok(1),
         "VEC2" => Ok(2),
         "VEC3" => Ok(3),
         "VEC4" => Ok(4),
-        other => Err(format!("unsupported accessor type {other:?}")),
+        other => bail!("unsupported accessor type {other:?}"),
     }
 }
 
 /// Decodes a `COMPONENT_TYPE_FLOAT` accessor into its flat components (e.g. 3 per element for a
 /// VEC3 accessor) - the only component type this exporter ever writes for positions, normals,
 /// uvs and animation tracks.
-pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<f32>, String> {
+pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<f32>> {
     let (accessor, bytes) = accessor_bytes(root, bin, accessor_index)?;
     if accessor.component_type != gltf::COMPONENT_TYPE_FLOAT {
-        return Err(format!("accessor {accessor_index} is not a float accessor"));
+        bail!("accessor {accessor_index} is not a float accessor");
     }
     let components = components_per_element(&accessor.type_)?;
     let expected_len = accessor.count as usize * components * 4;
     let bytes = bytes
         .get(..expected_len)
-        .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
+        .with_context(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
     Ok(bytes
         .as_chunks::<4>()
         .0
@@ -751,15 +750,15 @@ pub fn decode_floats(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Resu
 }
 
 /// Decodes a `COMPONENT_TYPE_UNSIGNED_INT` SCALAR accessor (mesh indices).
-pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<u32>, String> {
+pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<u32>> {
     let (accessor, bytes) = accessor_bytes(root, bin, accessor_index)?;
     if accessor.component_type != gltf::COMPONENT_TYPE_UNSIGNED_INT {
-        return Err(format!("accessor {accessor_index} is not an unsigned-int accessor"));
+        bail!("accessor {accessor_index} is not an unsigned-int accessor");
     }
     let expected_len = accessor.count as usize * 4;
     let bytes = bytes
         .get(..expected_len)
-        .ok_or_else(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
+        .with_context(|| format!("accessor {accessor_index}'s bufferView is shorter than its declared count"))?;
     Ok(bytes
         .as_chunks::<4>()
         .0
@@ -770,19 +769,19 @@ pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result
 
 /// Decodes a VEC2 float accessor (uvs). Not consumed yet - node traversal/meshing is what reads
 /// uvs; left in now since it's the same shape as its `decode_vec3s`/`decode_vec4s` siblings.
-pub fn decode_vec2s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 2]>, String> {
+pub fn decode_vec2s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 2]>> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<2>().0.to_vec())
 }
 
 /// Decodes a VEC3 float accessor (positions, normals, translation/scale animation output).
-pub fn decode_vec3s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 3]>, String> {
+pub fn decode_vec3s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 3]>> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<3>().0.to_vec())
 }
 
 /// Decodes a VEC4 float accessor (rotation animation output).
-pub fn decode_vec4s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 4]>, String> {
+pub fn decode_vec4s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 4]>> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<4>().0.to_vec())
 }
@@ -876,7 +875,9 @@ mod tests {
 
     #[test]
     fn read_glb_container_rejects_bad_magic() {
-        let err = read_glb_container(b"NOPE totally not a glb file").unwrap_err();
+        let err = read_glb_container(b"NOPE totally not a glb file")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("magic"));
     }
 
@@ -884,14 +885,14 @@ mod tests {
     fn read_glb_container_rejects_wrong_version() {
         let mut out = write_glb_container(b"{}", &[]);
         out[4..8].copy_from_slice(&99u32.to_le_bytes());
-        let err = read_glb_container(&out).unwrap_err();
+        let err = read_glb_container(&out).unwrap_err().to_string();
         assert!(err.contains("version"));
     }
 
     #[test]
     fn read_glb_container_rejects_truncated_file() {
         let out = write_glb_container(b"{}", &[1, 2, 3, 4]);
-        let err = read_glb_container(&out[..out.len() - 2]).unwrap_err();
+        let err = read_glb_container(&out[..out.len() - 2]).unwrap_err().to_string();
         assert!(err.contains("length"));
     }
 
@@ -949,7 +950,7 @@ mod tests {
     #[test]
     fn read_glb_rejects_invalid_json() {
         let out = write_glb_container(b"not json", &[]);
-        let err = read_glb(&out).unwrap_err();
+        let err = read_glb(&out).unwrap_err().to_string();
         assert!(err.contains("invalid glTF JSON"));
     }
 
@@ -982,7 +983,7 @@ mod tests {
     #[test]
     fn decode_floats_rejects_out_of_range_accessor() {
         let root = gltf::Root::default();
-        let err = decode_floats(&root, &[], 0).unwrap_err();
+        let err = decode_floats(&root, &[], 0).unwrap_err().to_string();
         assert!(err.contains("out of range"));
     }
 
@@ -994,7 +995,7 @@ mod tests {
         root.accessors = writer.accessors;
         root.buffer_views = writer.buffer_views;
 
-        let err = decode_floats(&root, &writer.bytes[..4], index).unwrap_err();
+        let err = decode_floats(&root, &writer.bytes[..4], index).unwrap_err().to_string();
         assert!(err.contains("out of bounds"));
     }
 
@@ -1006,7 +1007,7 @@ mod tests {
         root.accessors = writer.accessors;
         root.buffer_views = writer.buffer_views;
 
-        let err = decode_floats(&root, &writer.bytes, index).unwrap_err();
+        let err = decode_floats(&root, &writer.bytes, index).unwrap_err().to_string();
         assert!(err.contains("not a float accessor"));
     }
 }

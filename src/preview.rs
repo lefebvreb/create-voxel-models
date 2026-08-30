@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::str::FromStr;
 
+use anyhow::Context;
 use clap::Parser;
 use pyo3::types::PyAnyMethods;
 use pyo3::{PyResult, Python, pyfunction};
@@ -63,11 +64,9 @@ impl FromStr for Angle {
     }
 }
 
-#[derive(Error, Debug)]
-#[error("{0}")]
-pub struct PreviewError(pub String);
-
 /// Entry point for `python -m voxels.preview`.
+///
+/// Don't call this directly.
 #[pyfunction]
 pub fn _preview(py: Python<'_>) -> PyResult<()> {
     let mut argv = py.import("sys")?.getattr("argv")?.extract::<Vec<String>>()?;
@@ -75,7 +74,7 @@ pub fn _preview(py: Python<'_>) -> PyResult<()> {
         *argv0 = "voxels.preview".to_string();
     }
     let args = Args::parse_from(argv);
-    match preview_glb(args) {
+    match preview_glb(args).context("failed to preview scene") {
         Ok(files) => {
             for file in files {
                 println!("{}", file.display());
@@ -83,7 +82,7 @@ pub fn _preview(py: Python<'_>) -> PyResult<()> {
             Ok(())
         }
         Err(err) => {
-            eprintln!("error: {err}");
+            eprintln!("Error: {err:?}");
             exit(1);
         }
     }

@@ -18,6 +18,7 @@
 //! the *screen-space* offset a bent ray would land at, which is a much bigger addition for a
 //! subtle effect at this render size.
 
+use anyhow::{Context, Result};
 use glam::Vec3;
 
 use super::super::gltf;
@@ -101,20 +102,20 @@ pub struct DecodedMaterial {
     volume: Option<(Vec3, f32, f32)>,
 }
 
-pub fn decode_material(root: &gltf::Root, bin: &[u8], material_index: u32) -> Result<DecodedMaterial, String> {
+pub fn decode_material(root: &gltf::Root, bin: &[u8], material_index: u32) -> Result<DecodedMaterial> {
     let material = root
         .materials
         .get(material_index as usize)
-        .ok_or_else(|| format!("material index {material_index} is out of range"))?;
+        .with_context(|| format!("material index {material_index} is out of range"))?;
     let base_color_index = material
         .pbr_metallic_roughness
         .base_color_texture
-        .ok_or_else(|| "material has no base color texture".to_string())?
+        .context("material has no base color texture")?
         .index;
     let mr_index = material
         .pbr_metallic_roughness
         .metallic_roughness_texture
-        .ok_or_else(|| "material has no metallic-roughness texture".to_string())?
+        .context("material has no metallic-roughness texture")?
         .index;
 
     let extensions = material.extensions.as_ref();

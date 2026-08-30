@@ -3,6 +3,7 @@
 //! Decodes a material's embedded PNG textures and samples them by UV. Nearest-neighbor only,
 //! matching the `FILTER_NEAREST` sampler `glb.rs` always writes.
 
+use anyhow::{Context, Result, bail};
 use png::Decoder;
 
 use super::super::gltf;
@@ -25,40 +26,36 @@ impl Texture {
     }
 }
 
-pub fn decode_texture(root: &gltf::Root, bin: &[u8], texture_index: u32) -> Result<Texture, String> {
+pub fn decode_texture(root: &gltf::Root, bin: &[u8], texture_index: u32) -> Result<Texture> {
     let texture = root
         .textures
         .get(texture_index as usize)
-        .ok_or_else(|| format!("texture index {texture_index} is out of range"))?;
+        .with_context(|| format!("texture index {texture_index} is out of range"))?;
     let image = root
         .images
         .get(texture.source as usize)
-        .ok_or_else(|| format!("image index {} is out of range", texture.source))?;
+        .with_context(|| format!("image index {} is out of range", texture.source))?;
     let view = root
         .buffer_views
         .get(image.buffer_view as usize)
-        .ok_or_else(|| format!("bufferView index {} is out of range", image.buffer_view))?;
+        .with_context(|| format!("bufferView index {} is out of range", image.buffer_view))?;
     let start = view.byte_offset as usize;
     let end = start + view.byte_length as usize;
-    let bytes = bin
-        .get(start..end)
-        .ok_or_else(|| "image bufferView is out of bounds".to_string())?;
+    let bytes = bin.get(start..end).context("image bufferView is out of bounds")?;
 
     let mut reader = Decoder::new(std::io::Cursor::new(bytes))
         .read_info()
-        .map_err(|e| format!("invalid PNG image: {e}"))?;
+        .context("invalid PNG image")?;
     let buffer_size = reader
         .output_buffer_size()
-        .ok_or_else(|| "PNG image is too large to decode".to_string())?;
+        .context("PNG image is too large to decode")?;
     let mut buf = vec![0; buffer_size];
-    let info = reader
-        .next_frame(&mut buf)
-        .map_err(|e| format!("failed to decode PNG image: {e}"))?;
+    let info = reader.next_frame(&mut buf).context("failed to decode PNG image")?;
     let components = match info.color_type {
         png::ColorType::Grayscale => 1,
         png::ColorType::Rgb => 3,
         png::ColorType::Rgba => 4,
-        other => return Err(format!("unsupported PNG color type {other:?}")),
+        other => bail!("unsupported PNG color type {other:?}"),
     };
     buf.truncate(info.width as usize * info.height as usize * components);
     Ok(Texture {
@@ -114,7 +111,7 @@ mod tests {
         });
         root.textures.push(gltf::Texture { sampler: 0, source: 0 });
 
-        let err = decode_texture(&root, b"nope", 0).unwrap_err();
+        let err = decode_texture(&root, b"nope", 0).unwrap_err().to_string();
         assert!(err.contains("invalid PNG"));
     }
 }

@@ -10,6 +10,8 @@
 //! this one evaluates keyframe data as *decoded* from a `.glb`'s own accessors, which is what the
 //! renderer actually needs (see `Architecture` in the renderer-rewrite plan).
 
+use anyhow::{Context, Result, bail};
+
 use super::super::glb::{decode_floats, decode_vec3s, decode_vec4s};
 use super::super::gltf;
 
@@ -30,7 +32,7 @@ pub fn evaluate_node_trs(
     animation: &gltf::Animation,
     node_index: u32,
     time: f64,
-) -> Result<EvaluatedTrs, String> {
+) -> Result<EvaluatedTrs> {
     let mut result = EvaluatedTrs::default();
     let t = time as f32;
 
@@ -41,7 +43,7 @@ pub fn evaluate_node_trs(
         let sampler = animation
             .samplers
             .get(channel.sampler as usize)
-            .ok_or_else(|| format!("animation channel references out-of-range sampler {}", channel.sampler))?;
+            .with_context(|| format!("animation channel references out-of-range sampler {}", channel.sampler))?;
 
         let times = decode_floats(root, bin, sampler.input)?;
         // A channel with no keyframes is skipped on write (`push_channel` in `glb.rs`) and can't
@@ -64,7 +66,7 @@ pub fn evaluate_node_trs(
                 let values = decode_vec4s(root, bin, sampler.output)?;
                 result.rotation = Some(sample_rotation(&times, &values, interpolation, t));
             }
-            other => return Err(format!("unsupported animation channel target path {other:?}")),
+            other => bail!("unsupported animation channel target path {other:?}"),
         }
     }
 
@@ -399,7 +401,9 @@ mod tests {
     fn unknown_target_path_is_an_error_not_a_panic() {
         let (root, bin, mut animation) = translation_animation(0, &[0.0], &[[0.0, 0.0, 0.0]], None);
         animation.channels[0].target.path = "weight".to_string(); // morph-target weights: unsupported
-        let err = evaluate_node_trs(&root, &bin, &animation, 0, 0.0).unwrap_err();
+        let err = evaluate_node_trs(&root, &bin, &animation, 0, 0.0)
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("weight"));
     }
 }

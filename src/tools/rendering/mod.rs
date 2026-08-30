@@ -10,9 +10,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use anyhow::{Context, Result};
 use glam::Vec3;
-
-use crate::preview::PreviewError;
 
 mod animation;
 mod camera;
@@ -31,9 +30,9 @@ use super::{glb, gltf};
 const SUPERSAMPLE: u32 = 2;
 
 /// Renders `glb_bytes` to PNGs under `output_dir`, one per `(time, angle)` pair, in that order.
-/// See `crate::preview::PreviewError`'s doc comment for the error-handling policy - CLI
-/// *argument* parsing errors don't reach here at all, `clap` handles those itself before
-/// `preview_glb` is ever called.
+/// Runtime failures (bad `.glb` content, filesystem errors) surface as `anyhow` errors with
+/// context - CLI *argument* parsing errors don't reach here at all, `clap` handles those itself
+/// before `preview_glb` is ever called.
 fn render_glb(
     glb_bytes: &[u8],
     angles: &[crate::preview::Angle],
@@ -42,15 +41,15 @@ fn render_glb(
     include: &[String],
     exclude: &[String],
     output_dir: &Path,
-) -> Result<Vec<PathBuf>, PreviewError> {
-    let (root, bin) = glb::read_glb(glb_bytes).map_err(PreviewError)?;
+) -> Result<Vec<PathBuf>> {
+    let (root, bin) = glb::read_glb(glb_bytes).context("failed to parse the .glb file")?;
 
     let animation = match animation_name {
         Some(name) => Some(
             root.animations
                 .iter()
                 .find(|a| a.name.as_deref() == Some(name))
-                .ok_or_else(|| PreviewError(format!("no animation named {name:?} in this .glb file")))?,
+                .with_context(|| format!("no animation named {name:?} in this .glb file"))?,
         ),
         None => None,
     };
@@ -60,17 +59,13 @@ fn render_glb(
         vec![0.0]
     };
 
-    std::fs::create_dir_all(output_dir).map_err(|e| {
-        PreviewError(format!(
-            "failed to create output directory {}: {e}",
-            output_dir.display()
-        ))
-    })?;
+    std::fs::create_dir_all(output_dir)
+        .with_context(|| format!("failed to create output directory {}", output_dir.display()))?;
 
     let mut files = Vec::with_capacity(time_values.len() * angles.len());
     for (time_idx, &time) in time_values.iter().enumerate() {
         let primitives = scene_graph::collect_world_primitives(&root, &bin, animation, time, include, exclude)
-            .map_err(PreviewError)?;
+            .context("failed to collect scene geometry")?;
         let (min, max) = scene_graph::world_bounds(&primitives);
         let (center, radius) = camera::bounds_center_radius(min, max);
         let base_distance = camera::fit_distance(radius, camera::default_fov_y_rad(), camera::FIT_PADDING);
@@ -80,7 +75,7 @@ fn render_glb(
             let (width, height, pixels) = render_frame(&root, &bin, &primitives, &cam)?;
             let file = output_dir.join(format!("t{time_idx}_a{angle_idx}.png"));
             std::fs::write(&file, encode_png(width, height, &pixels, png::ColorType::Rgb))
-                .map_err(|e| PreviewError(format!("failed to write {}: {e}", file.display())))?;
+                .with_context(|| format!("failed to write {}", file.display()))?;
             files.push(file);
         }
     }
@@ -92,7 +87,7 @@ fn render_frame(
     bin: &[u8],
     primitives: &[WorldPrimitive],
     camera: &Camera,
-) -> Result<(u32, u32, Vec<u8>), PreviewError> {
+) -> Result<(u32, u32, Vec<u8>)> {
     let screen_size = camera::RESOLUTION * SUPERSAMPLE;
     let mut fb = Framebuffer::new(screen_size, screen_size, shading::clear_color_linear());
     let mut material_cache: HashMap<u32, shading::DecodedMaterial> = HashMap::new();
@@ -161,9 +156,12 @@ fn draw_primitive(
     camera: &Camera,
     screen_size: f32,
     transmissive: bool,
-) -> Result<(), PreviewError> {
+) -> Result<()> {
     if let std::collections::hash_map::Entry::Vacant(e) = material_cache.entry(primitive.material) {
-        e.insert(shading::decode_material(root, bin, primitive.material).map_err(PreviewError)?);
+        e.insert(
+            shading::decode_material(root, bin, primitive.material)
+                .with_context(|| format!("failed to decode material {}", primitive.material))?,
+        );
     }
     let material = &material_cache[&primitive.material];
 
@@ -214,7 +212,7 @@ fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_s
 // deals with what's left: applying the "no --angle means one default view" fallback and running
 // the actual render, which can still fail at runtime (bad path, bad `.glb` content, filesystem).
 
-pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>, PreviewError> {
+pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>> {
     let crate::preview::Args {
         glb: path,
         mut angles,
@@ -231,8 +229,7 @@ pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>, PreviewEr
             zoom: None,
         });
     }
-    let glb_bytes =
-        std::fs::read(&path).map_err(|e| PreviewError(format!("failed to read {}: {e}", path.display())))?;
+    let glb_bytes = std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     let output_dir = out.unwrap_or_else(default_output_dir);
     render_glb(
         &glb_bytes,

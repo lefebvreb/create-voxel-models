@@ -19,25 +19,25 @@ stubs:
 # Formats the database, runs clippy and regenerates pyi stubs file.
 clean: fmt clippy stubs
 
+# Compiles the project in debug mode and bundles it as a python package.
+dev:
+    maturin develop -- -Awarnings
+
 # Compiles the project in debug mode, bundles it as a python package and runs all test scripts in a venv.
 test:
     cargo +stable test
-    maturin develop -- -Awarnings
+    @just dev
     @for file in `ls tests/*.py`; do echo -e "\033[1mpython $file\033[0m" && .venv/bin/python $file; done
 
 # Builds the project in release mode, bundles all files into a zipped agent skill.
 build-skill: check
-    # Remove previous wheel artifacts.
     rm -f target/wheels/*
-    # Build manylinux package wheel file.
     maturin build --release --strip --zig
-    # Update SKILL.md front matter.
     yq -i --front-matter=process \
         " .description = \"$(yq -p toml -o yaml '.package.description' Cargo.toml)\" \
         | .metadata.author = \"$(yq -p toml -o yaml '.package.authors[0]' Cargo.toml)\" \
         | .metadata.version = \"$(yq -p toml -o yaml '.package.version' Cargo.toml)\"" \
         SKILL.md
-    # Zip SKILL.md, wheel and pyi stubs into an archive.
     python -c "from pathlib import Path; \
         from zipfile import ZipFile; \
         wheel = next(Path('target/wheels/').iterdir()); \
@@ -46,3 +46,4 @@ build-skill: check
         f.write('LICENSE'); \
         f.write(wheel, arcname=f'dist/{wheel.name}'); \
         f.write('python/voxels/_voxels.pyi', arcname='references/voxels.pyi');"
+    du -h create-voxel-models.zip

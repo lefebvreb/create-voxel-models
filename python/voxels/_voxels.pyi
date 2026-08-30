@@ -463,4 +463,6 @@ class Volume:
 def _preview() -> None:
     """
     Entry point for `python -m voxels.preview`.
+    
+    Don't call this directly.
     """

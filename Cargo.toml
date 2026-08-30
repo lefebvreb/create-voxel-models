@@ -18,6 +18,7 @@ lto = "fat"
 strip = "debuginfo"
 
 [dependencies]
+anyhow = { version = "1.0.104", default-features = false, features = ["std"] }
 clap = { version = "4.5", default-features = false, features = ["color", "derive", "error-context", "help", "std", "suggestions", "usage"] }
 either = { version = "1.17.0", default-features = false }
 glam = { version = "0.33.6", default-features = false, features = ["f64", "std"] }
