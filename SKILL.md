@@ -32,7 +32,7 @@ Finally, `Scene`s can be exported to `.glb` files (standard glTF 2.0, which load
 
 `references/voxels.pyi` bundled with this skill is the authoritative API reference — every class, method and argument is documented there. Read it before writing code; this file only covers workflow and conventions.
 
-One thing to fix in your head up front: coordinates are `(x, y, z)` and **`y` is up**. One voxel is one glTF unit, so node translations are in voxels too.
+One thing to fix in your head up front: coordinates are `(x, y, z)` and **`y` is up**. One voxel is one glTF unit, so node translations are in voxels too. Per the glTF convention a model's **front faces `+z`** — build models facing that way so scenes can assume it, and the preview camera looks straight at the front at `--angle 0,0` (see Previewing).
 
 # Usage
 
@@ -91,38 +91,38 @@ Here's an example of a model, a simple chair making use of the previously define
 
 from voxels import *
 
-from ...palettes.furniture import *
+from palettes.furniture import *
 
 model = Model(Dimensions(16, 16, 16), palette, Pivot.BottomCenter)
 
-# Front legs: floor up to the underside of the seat.
-model.aabb(wood_light, (3, 0, 3), (4, 5, 4))
-model.aabb(wood_light, (11, 0, 3), (12, 5, 4))
+# Front legs (+z, the side you face): floor up to the underside of the seat.
+model.aabb(wood_light, (3, 0, 11), (4, 5, 12))
+model.aabb(wood_light, (11, 0, 11), (12, 5, 12))
 
-# Back legs: run the full height, continuing above the seat as the backrest posts.
-model.aabb(wood_light, (3, 0, 9), (4, 15, 10))
-model.aabb(wood_light, (11, 0, 9), (12, 15, 10))
+# Back legs (-z): run the full height, continuing above the seat as the backrest posts.
+model.aabb(wood_light, (3, 0, 5), (4, 15, 6))
+model.aabb(wood_light, (11, 0, 5), (12, 15, 6))
 
 # Stretchers bracing the legs.
-model.aabb(wood_light, (5, 2, 3), (10, 3, 4))
-model.aabb(wood_light, (5, 2, 9), (10, 3, 10))
-model.aabb(wood_light, (3, 2, 5), (4, 3, 8))
-model.aabb(wood_light, (11, 2, 5), (12, 3, 8))
+model.aabb(wood_light, (5, 2, 11), (10, 3, 12))
+model.aabb(wood_light, (5, 2, 5), (10, 3, 6))
+model.aabb(wood_light, (3, 2, 7), (4, 3, 10))
+model.aabb(wood_light, (11, 2, 7), (12, 3, 10))
 
 # Seat slab.
-model.aabb(wood_dark, (3, 6, 3), (12, 7, 10))
+model.aabb(wood_dark, (3, 6, 5), (12, 7, 12))
 
 # Seat cushion pad, inset from the front and side edges.
-model.aabb(cushion, (4, 8, 4), (11, 8, 8))
+model.aabb(cushion, (4, 8, 7), (11, 8, 11))
 
 # Backrest panel between the back posts.
-model.aabb(wood_dark, (5, 9, 9), (10, 14, 10))
+model.aabb(wood_dark, (5, 9, 5), (10, 14, 6))
 
 # Rivet accents where the legs meet the seat.
-model.put(metal, (3, 5, 3))
-model.put(metal, (12, 5, 3))
-model.put(metal, (3, 6, 10))
-model.put(metal, (12, 6, 10))
+model.put(metal, (3, 5, 12))
+model.put(metal, (12, 5, 12))
+model.put(metal, (3, 6, 5))
+model.put(metal, (12, 6, 5))
 ```
 
 Be sure to label each logical block with what they are supposed to code for. You may use control flow constructs (loops, if statements, lists...) to help if needed. Add a short, numbered comment for each revision the user asks you to do on that model, for example:
@@ -142,7 +142,7 @@ A scene imports the models it needs, arranges them on a tree of nodes, optionall
 
 from voxels import *
 
-from ..models.furniture import chair
+from models.furniture import chair
 
 scene = Scene()
 root = scene.create_root_node("root")
@@ -164,13 +164,13 @@ If the user asks for it, keep the `export_glb` call in the scene file as above; 
 
 Once you think a model or scene is done, you **must** render it to `.png` and look at the result, then adjust and re-render. Repeat until it reads correctly from every angle — this loop is the core of the workflow, not an afterthought.
 
-Rendering is CLI-only and works from a `.glb` file, not directly from a `Model`/`Scene` object: export first, then run `python -m voxels.preview` on that file. It's a pure-CPU rasterizer — no GPU required, works anywhere. A sensible default coverage set is three three-quarter views, `(yaw, pitch)` in degrees:
+Rendering is CLI-only and works from a `.glb` file, not directly from a `Model`/`Scene` object: export first, then run `python -m voxels.preview` on that file. It's a pure-CPU rasterizer — no GPU required, works anywhere. Each `--angle` is `yaw,pitch` in degrees, with an optional third `zoom` factor (`45,25,1.5` frames tighter, a value below `1` pulls back). `yaw 0` faces the model's front, `yaw 180` its back, and the key light rakes the front, so `yaw` 315 and 45 are the two well-lit front three-quarter views; a sensible default coverage set is:
 
 ```sh
 python -c "from scenes.furniture import scene; scene.export_glb('.local/furniture.glb')"
-python -m voxels.preview .local/furniture.glb --angle 45,25 --angle 225,25 --angle 45,70
+python -m voxels.preview .local/furniture.glb --angle 315,25 --angle 45,25 --angle 180,40
 ```
 
 Run `python -m voxels.preview --help` for the full flag list.
 
-This prints the written PNG paths, one per line — read those. Other flags: `--time T` (repeatable, seconds) and `--animation NAME` to pose an animated scene before rendering; `--include NAME`/`--exclude NAME` (repeatable, matched against node or mesh names) to show only or hide parts of the scene; `--out DIR` to control where the PNGs land (a fresh temp directory by default).
+This prints the written PNG paths, one per line — read those. Other flags: `--anim NAME` poses an animated scene before rendering, and `--time T` (repeatable, seconds) picks which moments to sample — `--time` is ignored unless `--anim` is given; `--include NAME`/`--exclude NAME` (repeatable, matched against node or mesh names) to show only or hide parts of the scene; `--out DIR` to control where the PNGs land (a fresh temp directory by default).

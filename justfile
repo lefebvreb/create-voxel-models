@@ -24,9 +24,8 @@ dev:
     maturin develop -- -Awarnings
 
 # Compiles the project in debug mode, bundles it as a python package and runs all test scripts in a venv.
-test:
+test: dev
     cargo +stable test
-    @just dev
     @for file in `ls tests/*.py`; do echo -e "\033[1mpython $file\033[0m" && .venv/bin/python $file; done
 
 # Builds the project in release mode, bundles all files into a zipped agent skill.
