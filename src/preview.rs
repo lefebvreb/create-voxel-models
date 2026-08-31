@@ -20,7 +20,7 @@ pub struct Args {
     /// Camera positions (repeatable). A single three-quarter view (45,25) is used when omitted entirely.
     #[arg(short = 'a', long = "angle", value_name = "YAW,PITCH[,ZOOM]")]
     pub angles: Vec<Angle>,
-    /// Time, in seconds, to sample --animation at. Repeatable; ignored without --animation.
+    /// Time, in seconds, to sample --anim at. Repeatable; an error without --anim.
     #[arg(short = 't', long = "time", value_name = "SECONDS")]
     pub times: Vec<f64>,
     /// Name of the animation to pose the scene with before rendering.

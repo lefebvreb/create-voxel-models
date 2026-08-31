@@ -11,11 +11,11 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use glam::Vec3;
 use pyo3::exceptions::PyValueError;
 use pyo3::types::PyAnyMethods;
-use pyo3::{Bound, PyAny, PyResult, Python};
+use pyo3::{Bound, Py, PyResult, Python};
 
 mod animation;
 mod camera;
@@ -30,7 +30,8 @@ use scene_graph::WorldPrimitive;
 
 use super::utils::encode_png;
 use super::{glb, gltf};
-use crate::scene::Scene;
+use crate::model::Model;
+use crate::scene::{Node, Scene};
 
 const SUPERSAMPLE: u32 = 2;
 
@@ -58,11 +59,10 @@ fn render_glb(
         ),
         None => None,
     };
-    let time_values: Vec<f64> = if animation.is_some() && !times.is_empty() {
-        times.to_vec()
-    } else {
-        vec![0.0]
-    };
+    if !times.is_empty() && animation.is_none() {
+        bail!("--time needs --anim: there is no animation to sample without one");
+    }
+    let time_values: Vec<f64> = if times.is_empty() { vec![0.0] } else { times.to_vec() };
 
     std::fs::create_dir_all(output_dir)
         .with_context(|| format!("failed to create output directory {}", output_dir.display()))?;
@@ -244,29 +244,30 @@ fn target_to_glb_bytes(py: Python<'_>, target: &Path) -> Result<Vec<u8>> {
 fn scene_file_to_glb_bytes(py: Python<'_>, path: &Path) -> PyResult<Vec<u8>> {
     let namespace = py.import("runpy")?.call_method1("run_path", (path,))?;
 
-    let scene: Bound<'_, PyAny> = match namespace.get_item("scene") {
-        Ok(scene) => scene,
+    let scene: Bound<'_, Scene> = match namespace.get_item("scene") {
+        Ok(scene) => scene
+            .extract()
+            .map_err(|_| PyValueError::new_err(format!("{}'s `scene` is not a voxels.Scene", path.display())))?,
+        // No `scene`: fall back to a lone `model`, wrapped in a one-node scene assembled straight
+        // from the Rust types - no round trip through the `voxels` Python module.
         Err(_) => {
-            let model = namespace.get_item("model").map_err(|_| {
-                PyValueError::new_err(format!(
-                    "{} must define a module-level `scene` or `model`",
-                    path.display()
-                ))
-            })?;
-            let scene = py.import("voxels")?.getattr("Scene")?.call0()?;
-            scene
-                .call_method1("create_root_node", ("root",))?
-                .call_method1("add_model", ("model", model))?;
+            let model: Py<Model> = namespace
+                .get_item("model")
+                .ok()
+                .and_then(|obj| obj.extract().ok())
+                .ok_or_else(|| {
+                    PyValueError::new_err(format!(
+                        "{} must define a module-level `scene` (voxels.Scene) or `model` (voxels.Model)",
+                        path.display()
+                    ))
+                })?;
+            let scene = Bound::new(py, Scene::new())?;
+            let root = Scene::create_root_node(scene.clone(), "root".to_string(), None)?;
+            Node::add_model(root.bind(py).clone(), "model".to_string(), model, None)?;
             scene
         }
     };
 
-    let scene: Bound<'_, Scene> = scene.extract().map_err(|_| {
-        PyValueError::new_err(format!(
-            "{} must define `scene`/`model` as voxels.Scene/voxels.Model objects",
-            path.display()
-        ))
-    })?;
     Ok(glb::export_glb(scene))
 }
 
@@ -302,19 +303,10 @@ pub fn preview_glb(py: Python<'_>, args: crate::preview::Args) -> Result<Vec<Pat
     )
 }
 
-/// A fresh temp directory per invocation. Not a UUID crate: a process id + timestamp + counter
-/// is already unique enough for "don't collide with a concurrent CLI invocation", and this
-/// avoids adding a dependency for it.
+/// A fresh temp directory per invocation, named with a random UUID so concurrent CLI runs (and
+/// repeated runs that reuse a pid) never collide.
 fn default_output_dir() -> PathBuf {
-    use std::sync::atomic::{AtomicU64, Ordering};
-    use std::time::{SystemTime, UNIX_EPOCH};
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let counter = COUNTER.fetch_add(1, Ordering::Relaxed);
-    std::env::temp_dir().join(format!("voxels-{:x}-{nanos:x}-{counter:x}", std::process::id()))
+    std::env::temp_dir().join(format!("voxels-{}", uuid::Uuid::new_v4().simple()))
 }
 
 #[cfg(test)]
@@ -338,6 +330,23 @@ mod tests {
         Python::initialize();
         Python::attach(|py| {
             assert!(preview_glb(py, args("/no/such/file.glb")).is_err());
+        });
+    }
+
+    #[test]
+    fn time_without_anim_is_an_error() {
+        Python::initialize();
+        Python::attach(|py| {
+            let glb = glb::export_glb(Bound::new(py, Scene::new()).unwrap());
+            let angle = crate::preview::Angle {
+                yaw: 0.0,
+                pitch: 0.0,
+                zoom: None,
+            };
+            let err = render_glb(&glb, &[angle], &[1.0], None, &[], &[], Path::new("/nonexistent"))
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("--time needs --anim"), "got {err:?}");
         });
     }
 }
