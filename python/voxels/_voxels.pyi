@@ -9,31 +9,11 @@ class Anim:
     """
     def add_rotation(self, /, node: Node, input: Sequence[float], output: Sequence[Quat], *, interpolation: Interpolation |None = None) -> None:
         """
-        Set `node`'s rotation track, replacing any existing one.
-        
-        Args:
-            node: The node to animate; it must belong to this animation's scene.
-            input: Keyframe times, in seconds, in ascending order.
-            output: The rotation at each keyframe — or, with cubic-spline interpolation, an
-                in-tangent, value and out-tangent for each.
-            interpolation: How values between keyframes are interpolated; linear when omitted.
-        
-        Raises:
-            ValueError: If `node` is from another scene, or `output` has the wrong length.
+        Set `node`'s rotation track, replacing any existing one. See `add_translation` for details.
         """
     def add_scale(self, /, node: Node, input: Sequence[float], output: Sequence[Vec3], *, interpolation: Interpolation |None = None) -> None:
         """
-        Set `node`'s scale track, replacing any existing one.
-        
-        Args:
-            node: The node to animate; it must belong to this animation's scene.
-            input: Keyframe times, in seconds, in ascending order.
-            output: The per-axis scale at each keyframe — or, with cubic-spline interpolation,
-                an in-tangent, value and out-tangent for each.
-            interpolation: How values between keyframes are interpolated; linear when omitted.
-        
-        Raises:
-            ValueError: If `node` is from another scene, or `output` has the wrong length.
+        Set `node`'s scale track, replacing any existing one. See `add_translation` for details.
         """
     def add_translation(self, /, node: Node, input: Sequence[float], output: Sequence[Vec3], *, interpolation: Interpolation |None = None) -> None:
         """
@@ -97,6 +77,16 @@ class Dimensions:
     def z(self, /) -> int: ...
 
 @final
+class GridBounds:
+    """
+    An inclusive `(min, max)` corner pair in grid coordinates.
+    """
+    @property
+    def max(self, /) -> tuple[int, int, int]: ...
+    @property
+    def min(self, /) -> tuple[int, int, int]: ...
+
+@final
 class Interpolation:
     """
     How an animation track interpolates between keyframes.
@@ -152,9 +142,7 @@ class Model:
     """
     A 3D grid of voxels, each empty or set to one material of the model's palette.
     
-    Voxel coordinates are `(x, y, z)` tuples indexing from `(0, 0, 0)`; y is up. Coordinates
-    outside the grid raise `ValueError`, though spheres and ellipsoids reaching past an edge
-    are clipped to it.
+    Voxel coordinates are `(x, y, z)` tuples indexing from `(0, 0, 0)`; y is up.
     """
     def __new__(cls, /, dims: Dimensions, palette: Palette, pivot: Pivot |Vec3) -> Model:
         """
@@ -190,17 +178,30 @@ class Model:
         
         A `material` of `None` clears the ellipsoid instead.
         """
+    @property
+    def filled(self, /) -> int:
+        """
+        The number of set (non-empty) voxels in the model.
+        """
     def flip_x(self, /) -> None:
         """
-        Mirror the model in place across the x axis.
+        Flip the model along the x axis, reversing the order of its x layers within the grid's own
+        extent (`x` -> `dims.x - 1 - x`). This is not a reflection about the world `x = 0` plane:
+        the model stays in the same grid cells, only its contents are mirrored.
         """
     def flip_y(self, /) -> None:
         """
-        Mirror the model in place across the y axis.
+        Flip the model along the y axis. See `Model.flip_x` for details.
         """
     def flip_z(self, /) -> None:
         """
-        Mirror the model in place across the z axis.
+        Flip the model along the z axis. See `Model.flip_x` for details.
+        """
+    def get(self, /, p: tuple[int, int, int]) -> Material |None:
+        """
+        Return the material of the voxel at `p`, or `None` when it is empty.
+        
+        Raises `ValueError` if `p` is outside the grid.
         """
     def include(self, /, other: Model, offset: tuple[int, int, int]) -> None:
         """
@@ -208,6 +209,11 @@ class Model:
         
         Both models must share the same palette. Empty voxels in `other` leave this model
         unchanged; `other` must fit entirely within bounds once shifted.
+        """
+    def occupied_bounds(self, /) -> GridBounds |None:
+        """
+        The tight inclusive bounding box `(min, max)` of the model's set voxels, in grid
+        coordinates, or `None` when the model is empty.
         """
     @property
     def palette(self, /) -> Palette: ...
@@ -462,7 +468,5 @@ class Volume:
 
 def _preview() -> None:
     """
-    Entry point for `python -m voxels.preview`.
-    
-    Don't call this directly.
+    Entry point for `python -m voxels.preview`. Don't call this directly.
     """

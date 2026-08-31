@@ -14,8 +14,9 @@ use crate::tools::preview_glb;
 #[derive(Parser)]
 #[command(name = "voxels.preview")]
 pub struct Args {
-    /// Path to the .glb file to render.
-    pub glb: PathBuf,
+    /// Path to render: either a `.glb` file, or a `.py` file defining a module-level `scene`
+    /// (or a lone `model`, which is wrapped in a one-node scene).
+    pub target: PathBuf,
     /// Camera positions (repeatable). A single three-quarter view (45,25) is used when omitted entirely.
     #[arg(short = 'a', long = "angle", value_name = "YAW,PITCH[,ZOOM]")]
     pub angles: Vec<Angle>,
@@ -64,9 +65,7 @@ impl FromStr for Angle {
     }
 }
 
-/// Entry point for `python -m voxels.preview`.
-///
-/// Don't call this directly.
+/// Entry point for `python -m voxels.preview`. Don't call this directly.
 #[pyfunction]
 pub fn _preview(py: Python<'_>) -> PyResult<()> {
     let mut argv = py.import("sys")?.getattr("argv")?.extract::<Vec<String>>()?;
@@ -74,7 +73,7 @@ pub fn _preview(py: Python<'_>) -> PyResult<()> {
         *argv0 = "voxels.preview".to_string();
     }
     let args = Args::parse_from(argv);
-    match preview_glb(args).context("failed to preview scene") {
+    match preview_glb(py, args).context("failed to preview scene") {
         Ok(files) => {
             for file in files {
                 println!("{}", file.display());

@@ -3,15 +3,18 @@
 //! Renders a `.glb` file to PNGs - a pure-CPU rasterizer (`raster.rs`), no GPU/driver dependency,
 //! assembled from `glb`/`gltf` (reading), `scene_graph`/`animation` (world-space geometry),
 //! `camera` (projection) and `shading`/`texture` (materials). There is no programmatic
-//! `Scene.render`/`Model.render` API any more: export to `.glb` (`Scene.export_glb`), then run
-//! `python -m voxels.preview FILE.glb ...` (see `crate::preview`, which parses argv with `clap`
-//! and calls [`run_cli`] below).
+//! `Scene.render`/`Model.render` API any more: run `python -m voxels.preview TARGET ...` on a
+//! `.glb`, or on a `.py` that builds a `scene`/`model` - [`preview_glb`] resolves that first.
+//! `crate::preview` only parses argv with `clap` and calls into here.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use glam::Vec3;
+use pyo3::exceptions::PyValueError;
+use pyo3::types::PyAnyMethods;
+use pyo3::{Bound, PyAny, PyResult, Python};
 
 mod animation;
 mod camera;
@@ -26,6 +29,7 @@ use scene_graph::WorldPrimitive;
 
 use super::utils::encode_png;
 use super::{glb, gltf};
+use crate::scene::Scene;
 
 const SUPERSAMPLE: u32 = 2;
 
@@ -89,7 +93,8 @@ fn render_frame(
     camera: &Camera,
 ) -> Result<(u32, u32, Vec<u8>)> {
     let screen_size = camera::RESOLUTION * SUPERSAMPLE;
-    let mut fb = Framebuffer::new(screen_size, screen_size, shading::clear_color_linear());
+    let mut fb = Framebuffer::new(screen_size, screen_size, [0.0; 3]);
+    fb.fill_background(shading::background_gradient);
     let mut material_cache: HashMap<u32, shading::DecodedMaterial> = HashMap::new();
 
     // No backface culling: voxel meshing only ever emits outward-facing quads (no coincident
@@ -207,14 +212,62 @@ fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_s
 // --- CLI ---
 //
 // Argument *parsing* is entirely `clap`'s job now (`crate::preview::Args`, built with
-// `#[derive(Parser)]`) - by the time `run_cli` sees an `Args`, it's already well-formed
-// (required fields present, `--angle`/`--time` already the right types). This function only
-// deals with what's left: applying the "no --angle means one default view" fallback and running
-// the actual render, which can still fail at runtime (bad path, bad `.glb` content, filesystem).
+// `#[derive(Parser)]`) - by the time `preview_glb` sees an `Args`, it's already well-formed
+// (required fields present, `--angle`/`--time` already the right types). What's left is
+// resolving the target, applying the "no --angle means one default view" fallback, and running
+// the actual render, which can still fail at runtime (bad path, bad `.glb`/`.py` content, filesystem).
 
-pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>> {
+/// Resolves a preview target to glb bytes [`preview_glb`] can read: a `.glb` file is read as-is,
+/// a `.py` file is run and its scene serialized via [`scene_file_to_glb_bytes`] - entirely in
+/// memory, no intermediate file either way.
+fn target_to_glb_bytes(py: Python<'_>, target: &Path) -> Result<Vec<u8>> {
+    if target.extension().and_then(|ext| ext.to_str()) == Some("py") {
+        Ok(scene_file_to_glb_bytes(py, target)?)
+    } else {
+        std::fs::read(target).with_context(|| format!("failed to read {}", target.display()))
+    }
+}
+
+/// Runs a `.py` target and serializes whatever scene it builds straight to glb bytes - the same
+/// bytes `Scene.export_glb` would write to a file, without writing one.
+///
+/// The file is executed with `runpy` (so `python -m voxels.preview` and running the script
+/// directly resolve imports the same way); it must leave a module-level `scene`, or a `model`
+/// that gets wrapped in a single-node scene.
+fn scene_file_to_glb_bytes(py: Python<'_>, path: &Path) -> PyResult<Vec<u8>> {
+    let namespace = py.import("runpy")?.call_method1("run_path", (path,))?;
+
+    let scene: Bound<'_, PyAny> = match namespace.get_item("scene") {
+        Ok(scene) => scene,
+        Err(_) => {
+            let model = namespace.get_item("model").map_err(|_| {
+                PyValueError::new_err(format!(
+                    "{} must define a module-level `scene` or `model`",
+                    path.display()
+                ))
+            })?;
+            let scene = py.import("voxels")?.getattr("Scene")?.call0()?;
+            scene
+                .call_method1("create_root_node", ("root",))?
+                .call_method1("add_model", ("model", model))?;
+            scene
+        }
+    };
+
+    let scene: Bound<'_, Scene> = scene.extract().map_err(|_| {
+        PyValueError::new_err(format!(
+            "{} must define `scene`/`model` as voxels.Scene/voxels.Model objects",
+            path.display()
+        ))
+    })?;
+    glb::export_glb(scene)
+}
+
+/// Renders a preview `Args`'s target, resolving a `.py` target to glb bytes first (see
+/// [`target_to_glb_bytes`]) - the single entry point `crate::preview::_preview` calls into.
+pub fn preview_glb(py: Python<'_>, args: crate::preview::Args) -> Result<Vec<PathBuf>> {
     let crate::preview::Args {
-        glb: path,
+        target,
         mut angles,
         times,
         anim: animation,
@@ -222,6 +275,7 @@ pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>> {
         exclude,
         out,
     } = args;
+    let glb_bytes = target_to_glb_bytes(py, &target).context("failed to resolve preview target")?;
     if angles.is_empty() {
         angles.push(crate::preview::Angle {
             yaw: 45.0,
@@ -229,7 +283,6 @@ pub fn preview_glb(args: crate::preview::Args) -> Result<Vec<PathBuf>> {
             zoom: None,
         });
     }
-    let glb_bytes = std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))?;
     let output_dir = out.unwrap_or_else(default_output_dir);
     render_glb(
         &glb_bytes,
@@ -263,7 +316,7 @@ mod tests {
 
     fn args(path: &str) -> crate::preview::Args {
         crate::preview::Args {
-            glb: path.into(),
+            target: path.into(),
             angles: Vec::new(),
             times: Vec::new(),
             anim: None,
@@ -275,6 +328,9 @@ mod tests {
 
     #[test]
     fn run_cli_on_an_unreadable_path_is_an_error_not_a_panic() {
-        assert!(preview_glb(args("/no/such/file.glb")).is_err());
+        Python::initialize();
+        Python::attach(|py| {
+            assert!(preview_glb(py, args("/no/such/file.glb")).is_err());
+        });
     }
 }

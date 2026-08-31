@@ -2,7 +2,7 @@
 check:
     cargo +nightly fmt --check
     cargo +stable clippy -- -Dwarnings
-    maturin generate-stubs --out /tmp -- -Awarnings && diff python/voxels/_voxels.pyi /tmp/_voxels.pyi
+    maturin generate-stubs --out /tmp/voxels-stubs -- -Awarnings && diff python/voxels/_voxels.pyi /tmp/voxels-stubs/voxels/_voxels.pyi
 
 # Formats the codebase.
 fmt:
@@ -14,7 +14,7 @@ clippy:
 
 # Regenerates the pyi stubs file.
 stubs:
-    maturin generate-stubs --out python/voxels -- -Awarnings
+    maturin generate-stubs --out python -- -Awarnings
 
 # Formats the database, runs clippy and regenerates pyi stubs file.
 clean: fmt clippy stubs

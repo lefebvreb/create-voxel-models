@@ -3,7 +3,8 @@ use std::ops::{Add, Sub};
 
 use pyo3::exceptions::PyValueError;
 use pyo3::inspect::PyStaticExpr;
-use pyo3::{Borrowed, FromPyObject, PyAny, PyResult, pyclass, pymethods};
+use pyo3::types::PyTuple;
+use pyo3::{Borrowed, Bound, FromPyObject, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::model::Dimensions;
 
@@ -259,5 +260,19 @@ impl<'a, 'py> FromPyObject<'a, 'py> for Int3 {
     fn extract(obj: Borrowed<'a, 'py, PyAny>) -> Result<Self, Self::Error> {
         obj.extract::<(usize, usize, usize)>()
             .map(|(x, y, z)| Self::new(x, y, z))
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Int3 {
+    type Target = PyTuple;
+
+    type Output = Bound<'py, Self::Target>;
+
+    type Error = <(usize, usize, usize) as IntoPyObject<'py>>::Error;
+
+    const OUTPUT_TYPE: PyStaticExpr = <(usize, usize, usize) as IntoPyObject<'py>>::OUTPUT_TYPE;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        (self.x, self.y, self.z).into_pyobject(py)
     }
 }

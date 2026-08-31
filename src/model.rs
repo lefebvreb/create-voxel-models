@@ -54,6 +54,13 @@ impl Dimensions {
     }
 }
 
+/// An inclusive `(min, max)` corner pair in grid coordinates.
+#[pyclass(frozen, get_all)]
+pub struct GridBounds {
+    pub min: Int3,
+    pub max: Int3,
+}
+
 /// Which point of a model's voxel grid to place at its node's origin once in a scene.
 ///
 /// `Corner` uses the grid's `(0, 0, 0)` corner; `Center` uses its center; `BottomCenter` uses
@@ -69,9 +76,7 @@ pub enum Pivot {
 
 /// A 3D grid of voxels, each empty or set to one material of the model's palette.
 ///
-/// Voxel coordinates are `(x, y, z)` tuples indexing from `(0, 0, 0)`; y is up. Coordinates
-/// outside the grid raise `ValueError`, though spheres and ellipsoids reaching past an edge
-/// are clipped to it.
+/// Voxel coordinates are `(x, y, z)` tuples indexing from `(0, 0, 0)`; y is up.
 #[pyclass]
 pub struct Model {
     #[pyo3(get)]
@@ -120,7 +125,7 @@ impl Model {
         }
     }
 
-    fn get(&self, pos: Int3) -> Option<MaterialCode> {
+    fn voxel(&self, pos: Int3) -> Option<MaterialCode> {
         self.data[self.index(pos)]
     }
 
@@ -129,14 +134,17 @@ impl Model {
     }
 
     fn fill_ellipsoid(&mut self, material: Option<&Material>, center: Int3, radii: Int3) -> PyResult<()> {
-        self.check_contains(center)?;
         let code = self.get_material_code(material)?;
         if radii.any(|r| r == 0) {
             return Err(PyValueError::new_err("radius must be at least 1"));
         }
         let r = Vec3::from(radii);
+        let last = self.dims.last_index();
         let lo = center.saturating_sub(radii);
-        let hi = (center + radii).min(self.dims.last_index());
+        let hi = (center + radii).min(last);
+        if lo.x > hi.x || lo.y > hi.y || lo.z > hi.z {
+            return Ok(());
+        }
         for pos in box_positions(lo, hi) {
             let delta = Vec3::from(pos).__sub__(center.into());
             let nx = delta.x() / r.x();
@@ -205,22 +213,24 @@ impl Model {
         let dims = Dimensions::from(hi - lo + Int3::ONE);
         let mut clipped = Self::new(dims, self.palette.clone_ref(py), self.pivot);
         for pos in box_positions(lo, hi) {
-            clipped.set(pos - lo, self.get(pos));
+            clipped.set(pos - lo, self.voxel(pos));
         }
         Ok(clipped)
     }
 
-    /// Mirror the model in place across the x axis.
+    /// Flip the model along the x axis, reversing the order of its x layers within the grid's own
+    /// extent (`x` -> `dims.x - 1 - x`). This is not a reflection about the world `x = 0` plane:
+    /// the model stays in the same grid cells, only its contents are mirrored.
     pub fn flip_x(&mut self) {
         self.flip_axis(1, self.dims.x);
     }
 
-    /// Mirror the model in place across the y axis.
+    /// Flip the model along the y axis. See `Model.flip_x` for details.
     pub fn flip_y(&mut self) {
         self.flip_axis(self.dims.x, self.dims.y);
     }
 
-    /// Mirror the model in place across the z axis.
+    /// Flip the model along the z axis. See `Model.flip_x` for details.
     pub fn flip_z(&mut self) {
         self.flip_axis(self.zstride, self.dims.z);
     }
@@ -231,6 +241,38 @@ impl Model {
         let code = self.get_material_code(material)?;
         self.set(p, code);
         Ok(())
+    }
+
+    /// Return the material of the voxel at `p`, or `None` when it is empty.
+    ///
+    /// Raises `ValueError` if `p` is outside the grid.
+    pub fn get(&self, p: Int3, py: Python) -> PyResult<Option<Py<Material>>> {
+        self.check_contains(p)?;
+        Ok(self
+            .voxel(p)
+            .map(|code| self.palette.borrow(py).materials[code.index()].clone_ref(py)))
+    }
+
+    /// The number of set (non-empty) voxels in the model.
+    #[getter]
+    pub fn filled(&self) -> usize {
+        self.data.iter().filter(|voxel| voxel.is_some()).count()
+    }
+
+    /// The tight inclusive bounding box `(min, max)` of the model's set voxels, in grid
+    /// coordinates, or `None` when the model is empty.
+    pub fn occupied_bounds(&self) -> Option<GridBounds> {
+        let mut min = Int3::from(self.dims);
+        let mut max = Int3::ZERO;
+        let mut found = false;
+        for pos in box_positions(Int3::ZERO, self.dims.last_index()) {
+            if self.voxel(pos).is_some() {
+                found = true;
+                min = min.min(pos);
+                max = max.max(pos);
+            }
+        }
+        found.then_some(GridBounds { min, max })
     }
 
     /// Fill the axis-aligned box between corners `p1` and `p2` inclusive.
@@ -279,7 +321,7 @@ impl Model {
             ));
         }
         for local in box_positions(Int3::ZERO, other.dims.last_index()) {
-            if let code @ Some(_) = other.get(local) {
+            if let code @ Some(_) = other.voxel(local) {
                 self.set(offset + local, code)
             }
         }

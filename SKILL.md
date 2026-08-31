@@ -53,10 +53,15 @@ voxels
 ├── scenes
 │   ├── furniture.py
 │   └── ...
-└── GUIDELINES.md
+└── STYLE.md
 ```
 
-Use `GUIDELINES.md` to store general guidelines for keeping consistency between models. These guidelines can be user or agent provided.
+`STYLE.md` holds **high-level authoring guidance only** — the decisions that keep a set of models feeling like one set, which nothing else in the project records. For example: the world scale (how many voxels to a metre), shared proportions, a common colour language, recurring motifs and how to build them, lighting/orientation conventions, naming schemes. Entries can be user- or agent-provided.
+
+Keep out of it anything already recorded elsewhere: the API (that's `references/voxels.pyi`), what materials a palette defines or what each one is for (read `palettes/*.py`), the list of existing models or their geometry (read `models/`), or how a specific model is built (its own file, with its revision comments). If you catch yourself restating code, delete it — a stale copy is worse than none.
+
+> Good: "Chairs and tables share a 16-voxel seat/table height so they read as a set." / "Metal accents only ever appear as single-voxel rivets, never as surfaces."
+> Bad: "The furniture palette has wood_light, wood_dark, metal and cushion." / "chair.py builds a chair with four legs and a backrest."
 
 ## File structure
 
@@ -133,6 +138,8 @@ Be sure to label each logical block with what they are supposed to code for. You
 
 **Symmetry.** Rather than repeating mirrored geometry by hand, build one side, then `copy` / `flip_*` / `include` it back in. See the `Model` docstrings for `copy`, `flip_x`, `include` and `clip`.
 
+**Checking geometry in code.** `Model.get((x, y, z))` returns the material at a voxel (or `None`), `Model.filled` counts set voxels, and `Model.occupied_bounds()` gives the tight `(min, max)` box the model actually occupies — use these to assert placement and extent instead of only eyeballing renders.
+
 ### Scenes
 
 A scene imports the models it needs, arranges them on a tree of nodes, optionally animates some nodes, and exports. Node transforms (`translation` in voxels, `rotation` as a `Quat`, `scale` as a `Vec3`) apply to a node's whole subtree, so a model gets its own transform by living on its own child node. Node, mesh and animation names must each be unique within the scene.
@@ -152,25 +159,22 @@ controller.add_model("chair", chair.model)
 
 spin = scene.create_anim("spin")
 spin.add_rotation(controller, [0.0, 4.0], [Quat.IDENTITY, Quat.from_rotation_y(360)])
-
-scene.export_glb("assets/glb/furniture.glb")
 ```
 
 `add_translation` and `add_scale` follow the same shape as `add_rotation`, with `Vec3` outputs.
 
-If the user asks for it, keep the `export_glb` call in the scene file as above; otherwise call it from your preview script.
+The preview CLI exports the scene itself (see Previewing), so a scene file needs no `export_glb` call. Add one — `scene.export_glb("assets/glb/furniture.glb")` at the end — only if the user wants the `.glb` written as a deliverable.
 
 ## Previewing
 
 Once you think a model or scene is done, you **must** render it to `.png` and look at the result, then adjust and re-render. Repeat until it reads correctly from every angle — this loop is the core of the workflow, not an afterthought.
 
-Rendering is CLI-only and works from a `.glb` file, not directly from a `Model`/`Scene` object: export first, then run `python -m voxels.preview` on that file. It's a pure-CPU rasterizer — no GPU required, works anywhere. Each `--angle` is `yaw,pitch` in degrees, with an optional third `zoom` factor (`45,25,1.5` frames tighter, a value below `1` pulls back). `yaw 0` faces the model's front, `yaw 180` its back, and the key light rakes the front, so `yaw` 315 and 45 are the two well-lit front three-quarter views; a sensible default coverage set is:
+Rendering is CLI-only — `python -m voxels.preview TARGET`, a pure-CPU rasterizer, no GPU required. `TARGET` is either a `.glb` file or a **`.py` file** that defines a module-level `scene` (or a lone `model`, which the CLI wraps in a one-node scene and renders on its own — the fastest way to eyeball a single model). Each `--angle` is `yaw,pitch` in degrees, with an optional third `zoom` factor (`45,25,1.5` frames tighter, a value below `1` pulls back). `yaw 0` faces the model's front, `yaw 180` its back, and the key light rakes the front, so `yaw` 315 and 45 are the two well-lit front three-quarter views; a sensible default coverage set is:
 
 ```sh
-python -c "from scenes.furniture import scene; scene.export_glb('.local/furniture.glb')"
-python -m voxels.preview .local/furniture.glb --angle 315,25 --angle 45,25 --angle 180,40
+python -m voxels.preview scenes/furniture.py --angle 315,25 --angle 45,25 --angle 180,40
 ```
 
-Run `python -m voxels.preview --help` for the full flag list.
+**Run it from the project directory** (the one holding `models/`, `palettes/`, `scenes/`) — the `.py` target's own imports resolve against the working directory, and a `.glb` path passed to `export_glb` or the CLI is relative to it too. Run `python -m voxels.preview --help` for the full flag list.
 
 This prints the written PNG paths, one per line — read those. Other flags: `--anim NAME` poses an animated scene before rendering, and `--time T` (repeatable, seconds) picks which moments to sample — `--time` is ignored unless `--anim` is given; `--include NAME`/`--exclude NAME` (repeatable, matched against node or mesh names) to show only or hide parts of the scene; `--out DIR` to control where the PNGs land (a fresh temp directory by default).

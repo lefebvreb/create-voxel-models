@@ -28,6 +28,11 @@ use super::texture::{Texture, decode_texture};
 pub const AMBIENT_INTENSITY: f32 = 0.7;
 pub const DIRECTIONAL_INTENSITY: f32 = 1.3;
 pub const REFLECTION_INTENSITY: f32 = 0.5;
+/// A weak fill from the camera's own direction, added on top of the fixed key light so faces the
+/// key light rakes past don't fall all the way to bare ambient - dark matte materials read as
+/// holes punched in the mesh against the backdrop otherwise. Deliberately small: the key light
+/// still does the form-sculpting and keeps the same face lit the same way across angles.
+pub const FILL_INTENSITY: f32 = 0.3;
 
 /// Matches `setup_lighting`'s `Transform::default().looking_to(Vec3::new(-0.5, -1.0, -0.3), ...)`
 /// - the direction the light *points*, so the direction *toward* the light is its negation.
@@ -38,10 +43,17 @@ fn light_direction() -> Vec3 {
 const SKY: [u8; 3] = [210, 210, 214];
 const EQUATOR: [u8; 3] = [140, 140, 144];
 const GROUND: [u8; 3] = [70, 70, 74];
-const CLEAR_COLOR_SRGB: [u8; 3] = [46, 46, 46];
+const BACKGROUND_TOP_SRGB: [u8; 3] = [36, 36, 40];
+const BACKGROUND_BOTTOM_SRGB: [u8; 3] = [78, 78, 86];
 
-pub fn clear_color_linear() -> [f32; 3] {
-    linear_rgb_u8(CLEAR_COLOR_SRGB).to_array()
+/// The backdrop colour `y_frac` of the way down the frame (`0.0` = top row, `1.0` = bottom),
+/// a vertical gradient interpolated in linear space. A single flat fill let dark matte faces
+/// collapse into it; grading it lighter toward the bottom keeps a near-black silhouette edged
+/// against the backdrop.
+pub fn background_gradient(y_frac: f32) -> [f32; 3] {
+    linear_rgb_u8(BACKGROUND_TOP_SRGB)
+        .lerp(linear_rgb_u8(BACKGROUND_BOTTOM_SRGB), y_frac.clamp(0.0, 1.0))
+        .to_array()
 }
 
 /// One average tone per cube face (+X, -X, +Y, -Y, +Z, -Z), replacing the old renderer's
@@ -162,7 +174,8 @@ pub fn shade_opaque(material: &DecodedMaterial, world_normal: Vec3, view_dir: Ve
     let n = world_normal.normalize_or_zero();
     let ambient = hemisphere_ambient(n.y) * AMBIENT_INTENSITY;
     let diffuse = n.dot(light_direction()).max(0.0) * DIRECTIONAL_INTENSITY;
-    let diffuse_response = base_color * (ambient + Vec3::splat(diffuse)) * (1.0 - metallic);
+    let fill = n.dot(view_dir).max(0.0) * FILL_INTENSITY;
+    let diffuse_response = base_color * (ambient + Vec3::splat(diffuse + fill)) * (1.0 - metallic);
 
     let reflected = (-view_dir).reflect(n);
     let reflection = reflection_cue(reflected) * REFLECTION_INTENSITY * (1.0 - roughness * 0.5);
@@ -234,6 +247,33 @@ mod tests {
     fn reflection_cue_picks_the_dominant_axis() {
         assert_eq!(reflection_cue(Vec3::new(1.0, 0.1, 0.0)), reflection_cue(Vec3::X));
         assert_ne!(reflection_cue(Vec3::X), reflection_cue(Vec3::NEG_X));
+    }
+
+    #[test]
+    fn background_gradient_grades_lighter_toward_the_bottom_and_clamps() {
+        let top = background_gradient(0.0);
+        let middle = background_gradient(0.5);
+        let bottom = background_gradient(1.0);
+        assert!(bottom[0] > middle[0] && middle[0] > top[0]);
+        assert_eq!(background_gradient(-1.0), top);
+        assert_eq!(background_gradient(2.0), bottom);
+    }
+
+    #[test]
+    fn fill_light_brightens_a_face_turned_toward_the_camera() {
+        let material = DecodedMaterial {
+            base_color: dummy_texture(),
+            metallic_roughness: dummy_texture(),
+            transmission: None,
+            ior: 1.5,
+            emissive: None,
+            volume: None,
+        };
+        // A normal along +Z catches the same key light and ambient whichever way the camera
+        // faces it, so any brightness difference here is the camera-follow fill term.
+        let facing = shade_opaque(&material, Vec3::Z, Vec3::Z, [0.5, 0.5]);
+        let grazing = shade_opaque(&material, Vec3::Z, Vec3::X, [0.5, 0.5]);
+        assert!(facing.length() > grazing.length());
     }
 
     #[test]

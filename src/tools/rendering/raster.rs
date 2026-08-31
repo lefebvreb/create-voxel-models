@@ -37,6 +37,20 @@ impl Framebuffer {
     fn index(&self, x: u32, y: u32) -> usize {
         (y * self.width + x) as usize
     }
+
+    /// Repaints every pixel from `f`, called with the pixel's vertical position from `0.0` (top
+    /// row) to `1.0` (bottom row) - used to lay down a gradient backdrop before any geometry is
+    /// drawn. Leaves the z-buffer untouched.
+    pub fn fill_background(&mut self, f: impl Fn(f32) -> [f32; 3]) {
+        let denom = (self.height.max(2) - 1) as f32;
+        for y in 0..self.height {
+            let color = f(y as f32 / denom);
+            for x in 0..self.width {
+                let index = self.index(x, y);
+                self.color[index] = color;
+            }
+        }
+    }
 }
 
 /// A triangle vertex already projected to screen space: `x`/`y` in pixel coordinates, `depth` a

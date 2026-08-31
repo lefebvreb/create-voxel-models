@@ -55,17 +55,7 @@ impl Anim {
         Self::with_node_trs(slf, node, |trs| trs.translation = Some(channel))
     }
 
-    /// Set `node`'s rotation track, replacing any existing one.
-    ///
-    /// Args:
-    ///     node: The node to animate; it must belong to this animation's scene.
-    ///     input: Keyframe times, in seconds, in ascending order.
-    ///     output: The rotation at each keyframe — or, with cubic-spline interpolation, an
-    ///         in-tangent, value and out-tangent for each.
-    ///     interpolation: How values between keyframes are interpolated; linear when omitted.
-    ///
-    /// Raises:
-    ///     ValueError: If `node` is from another scene, or `output` has the wrong length.
+    /// Set `node`'s rotation track, replacing any existing one. See `add_translation` for details.
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
     pub fn add_rotation(
         slf: Bound<Self>,
@@ -78,17 +68,7 @@ impl Anim {
         Self::with_node_trs(slf, node, |trs| trs.rotation = Some(channel))
     }
 
-    /// Set `node`'s scale track, replacing any existing one.
-    ///
-    /// Args:
-    ///     node: The node to animate; it must belong to this animation's scene.
-    ///     input: Keyframe times, in seconds, in ascending order.
-    ///     output: The per-axis scale at each keyframe — or, with cubic-spline interpolation,
-    ///         an in-tangent, value and out-tangent for each.
-    ///     interpolation: How values between keyframes are interpolated; linear when omitted.
-    ///
-    /// Raises:
-    ///     ValueError: If `node` is from another scene, or `output` has the wrong length.
+    /// Set `node`'s scale track, replacing any existing one. See `add_translation` for details.
     #[pyo3(signature = (node, input, output, *, interpolation = None))]
     pub fn add_scale(
         slf: Bound<Self>,
