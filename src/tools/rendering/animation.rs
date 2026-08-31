@@ -7,8 +7,7 @@
 //!
 //! This is the read-side counterpart to `crate::anim`'s `Channel<T>`/`Interpolation`: that module
 //! holds keyframe data as authored (used only to *write* `export_glb`'s animation accessors);
-//! this one evaluates keyframe data as *decoded* from a `.glb`'s own accessors, which is what the
-//! renderer actually needs (see `Architecture` in the renderer-rewrite plan).
+//! this one evaluates keyframe data as *decoded* from a `.glb`'s own accessors.
 
 use anyhow::{Context, Result, bail};
 
@@ -56,11 +55,11 @@ pub fn evaluate_node_trs(
         match channel.target.path.as_str() {
             "translation" => {
                 let values = decode_vec3s(root, bin, sampler.output)?;
-                result.translation = Some(sample_vec3(&times, &values, interpolation, t));
+                result.translation = Some(sample(&times, &values, interpolation, t));
             }
             "scale" => {
                 let values = decode_vec3s(root, bin, sampler.output)?;
-                result.scale = Some(sample_vec3(&times, &values, interpolation, t));
+                result.scale = Some(sample(&times, &values, interpolation, t));
             }
             "rotation" => {
                 let values = decode_vec4s(root, bin, sampler.output)?;
@@ -105,31 +104,35 @@ fn locate(times: &[f32], t: f32) -> (usize, f32, f32) {
     if t >= times[last] {
         return (last - 1, 1.0, times[last] - times[last - 1]);
     }
-    let i = match times.binary_search_by(|probe| probe.partial_cmp(&t).expect("keyframe times are never NaN")) {
+    // `total_cmp`, not `partial_cmp().unwrap()`: a corrupt/hand-edited `.glb` can carry a NaN
+    // keyframe time, and a slightly-off segment beats a panic for input this module is meant to
+    // tolerate (see the module doc). NaN sorts as the largest value under `total_cmp`.
+    let i = match times.binary_search_by(|probe| probe.total_cmp(&t)) {
         Ok(exact) if exact < last => exact,
         Ok(_) => last - 1, // exact match on the final keyframe
-        Err(insert_at) => insert_at - 1,
+        Err(insert_at) => insert_at.saturating_sub(1).min(last - 1),
     };
     let (t0, t1) = (times[i], times[i + 1]);
     let alpha = if t1 > t0 { (t - t0) / (t1 - t0) } else { 0.0 };
     (i, alpha, t1 - t0)
 }
 
-fn keyframe3(values: &[[f32; 3]], interpolation: Interpolation, i: usize) -> [f32; 3] {
+/// The value at keyframe `i`, reaching past the `[in-tangent, value, out-tangent]` triples that
+/// cubic-spline output is packed into.
+fn keyframe<const N: usize>(values: &[[f32; N]], interpolation: Interpolation, i: usize) -> [f32; N] {
     match interpolation {
-        // Cubic-spline output packs [in-tangent, value, out-tangent] per keyframe.
         Interpolation::CubicSpline => values[i * 3 + 1],
         _ => values[i],
     }
 }
 
-fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 3] {
+fn lerp<const N: usize>(a: [f32; N], b: [f32; N], t: f32) -> [f32; N] {
     std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
 }
 
 /// Hermite cubic-spline interpolation per the glTF spec's formula, using the out-tangent at `i`
-/// and the in-tangent at `i + 1`.
-fn hermite3(values: &[[f32; 3]], i: usize, alpha: f32, dt: f32) -> [f32; 3] {
+/// and the in-tangent at `i + 1`. `values` is in cubic-spline's tripled layout.
+fn hermite<const N: usize>(values: &[[f32; N]], i: usize, alpha: f32, dt: f32) -> [f32; N] {
     let p0 = values[i * 3 + 1];
     let m0 = values[i * 3 + 2];
     let p1 = values[(i + 1) * 3 + 1];
@@ -142,60 +145,40 @@ fn hermite3(values: &[[f32; 3]], i: usize, alpha: f32, dt: f32) -> [f32; 3] {
     std::array::from_fn(|c| h00 * p0[c] + h10 * dt * m0[c] + h01 * p1[c] + h11 * dt * m1[c])
 }
 
-fn sample_vec3(times: &[f32], values: &[[f32; 3]], interpolation: Interpolation, t: f32) -> [f32; 3] {
+/// Samples an `N`-component channel at time `t` with component-wise interpolation - correct for
+/// translation and scale. Rotation needs [`sample_rotation`] instead (spherical `LINEAR`).
+fn sample<const N: usize>(times: &[f32], values: &[[f32; N]], interpolation: Interpolation, t: f32) -> [f32; N] {
     if times.len() == 1 {
-        return keyframe3(values, interpolation, 0);
+        return keyframe(values, interpolation, 0);
     }
     let (i, alpha, dt) = locate(times, t);
     match interpolation {
-        Interpolation::Step => keyframe3(values, interpolation, i),
-        Interpolation::Linear => lerp3(
-            keyframe3(values, interpolation, i),
-            keyframe3(values, interpolation, i + 1),
+        Interpolation::Step => keyframe(values, interpolation, i),
+        Interpolation::Linear => lerp(
+            keyframe(values, interpolation, i),
+            keyframe(values, interpolation, i + 1),
             alpha,
         ),
-        Interpolation::CubicSpline => hermite3(values, i, alpha, dt),
+        Interpolation::CubicSpline => hermite(values, i, alpha, dt),
     }
 }
 
-fn keyframe4(values: &[[f32; 4]], interpolation: Interpolation, i: usize) -> [f32; 4] {
-    match interpolation {
-        Interpolation::CubicSpline => values[i * 3 + 1],
-        _ => values[i],
-    }
-}
-
-fn hermite4(values: &[[f32; 4]], i: usize, alpha: f32, dt: f32) -> [f32; 4] {
-    let p0 = values[i * 3 + 1];
-    let m0 = values[i * 3 + 2];
-    let p1 = values[(i + 1) * 3 + 1];
-    let m1 = values[(i + 1) * 3];
-    let (t, t2, t3) = (alpha, alpha * alpha, alpha * alpha * alpha);
-    let h00 = 2.0 * t3 - 3.0 * t2 + 1.0;
-    let h10 = t3 - 2.0 * t2 + t;
-    let h01 = -2.0 * t3 + 3.0 * t2;
-    let h11 = t3 - t2;
-    std::array::from_fn(|c| h00 * p0[c] + h10 * dt * m0[c] + h01 * p1[c] + h11 * dt * m1[c])
-}
-
-/// Rotation gets its own sampler, not a generic-over-N one shared with `sample_vec3`: `LINEAR`
-/// interpolation on a quaternion should be spherical (`slerp`), not a per-component lerp - see
-/// `crate::anim::Interpolation`'s doc comment, which already documents this for the write side.
-/// The cubic-spline result is renormalized after Hermite interpolation, since that formula
-/// doesn't preserve unit length on its own.
+/// Like [`sample`], but `LINEAR` interpolation is spherical (`slerp`) and the cubic-spline result
+/// is renormalized: a quaternion track can't be blended per-component and stay a unit rotation.
+/// See `crate::anim::Interpolation`'s doc comment, which documents this for the write side.
 fn sample_rotation(times: &[f32], values: &[[f32; 4]], interpolation: Interpolation, t: f32) -> [f32; 4] {
     if times.len() == 1 {
-        return keyframe4(values, interpolation, 0);
+        return keyframe(values, interpolation, 0);
     }
     let (i, alpha, dt) = locate(times, t);
     match interpolation {
-        Interpolation::Step => keyframe4(values, interpolation, i),
+        Interpolation::Step => keyframe(values, interpolation, i),
         Interpolation::Linear => {
-            let a = glam::Quat::from_array(keyframe4(values, interpolation, i));
-            let b = glam::Quat::from_array(keyframe4(values, interpolation, i + 1));
+            let a = glam::Quat::from_array(keyframe(values, interpolation, i));
+            let b = glam::Quat::from_array(keyframe(values, interpolation, i + 1));
             a.slerp(b, alpha).to_array()
         }
-        Interpolation::CubicSpline => glam::Quat::from_array(hermite4(values, i, alpha, dt))
+        Interpolation::CubicSpline => glam::Quat::from_array(hermite(values, i, alpha, dt))
             .normalize()
             .to_array(),
     }
@@ -324,6 +307,18 @@ mod tests {
                 .translation,
             Some([3.0, 1.0, 4.0])
         );
+    }
+
+    #[test]
+    fn nan_keyframe_time_in_a_corrupt_glb_does_not_panic() {
+        let (root, bin, animation) = translation_animation(
+            0,
+            &[0.0, f32::NAN, 2.0],
+            &[[0.0; 3], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            None,
+        );
+        // Just needs to return without panicking - the sampled value for corrupt input is undefined.
+        let _ = evaluate_node_trs(&root, &bin, &animation, 0, 1.0).unwrap();
     }
 
     #[test]

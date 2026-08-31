@@ -1,10 +1,10 @@
 use std::num::ParseFloatError;
 use std::path::PathBuf;
-use std::process::exit;
 use std::str::FromStr;
 
 use anyhow::Context;
 use clap::Parser;
+use pyo3::exceptions::PySystemExit;
 use pyo3::types::PyAnyMethods;
 use pyo3::{PyResult, Python, pyfunction};
 use thiserror::Error;
@@ -72,7 +72,13 @@ pub fn _preview(py: Python<'_>) -> PyResult<()> {
     if let Some(argv0) = argv.first_mut() {
         *argv0 = "voxels.preview".to_string();
     }
-    let args = Args::parse_from(argv);
+    let args = match Args::try_parse_from(argv) {
+        Ok(args) => args,
+        Err(err) => {
+            println!("{err}");
+            return Err(PySystemExit::new_err(1));
+        }
+    };
     match preview_glb(py, args).context("failed to preview scene") {
         Ok(files) => {
             for file in files {
@@ -81,8 +87,8 @@ pub fn _preview(py: Python<'_>) -> PyResult<()> {
             Ok(())
         }
         Err(err) => {
-            eprintln!("Error: {err:?}");
-            exit(1);
+            println!("Error: {err:?}");
+            Err(PySystemExit::new_err(1))
         }
     }
 }

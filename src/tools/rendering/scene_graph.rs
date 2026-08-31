@@ -5,13 +5,10 @@
 //! already transformed into world space - the input the rasterizer core and bounds computation
 //! both need. No pyo3, independently testable like the rest of `tools/`.
 //!
-//! **`include`/`exclude` semantics** (a deliberate design choice, not a strict port of the old
-//! Bevy-based renderer's `Visibility` propagation, which had a subtler and untested edge case for
-//! nested names - see the renderer-rewrite plan): a name (matched against a node's own name or
-//! its mesh's name) makes the whole subtree rooted at that node included/excluded. `exclude`
-//! always wins over `include` within a subtree once applied, matching real world "hide this part"
-//! intent. With no `include` list, everything starts included; `exclude` alone still works as a
-//! deny-list.
+//! **`include`/`exclude` semantics**: a name (matched against a node's own name or its mesh's
+//! name) makes the whole subtree rooted at that node included/excluded. `exclude` always wins
+//! over `include` within a subtree once applied, matching real-world "hide this part" intent.
+//! With no `include` list, everything starts included; `exclude` alone still works as a deny-list.
 
 use anyhow::{Context, Result};
 use glam::{DVec3, Mat4, Quat, Vec3};
@@ -186,13 +183,10 @@ fn world_primitive(
     })
 }
 
-/// The world-space min/max corners spanning every vertex of every given primitive. Unlike the
-/// old Bevy-based renderer's `compute_bounds` (which had to fold the 8 corners of each mesh's
-/// local `Aabb` component through its `GlobalTransform`, since that's all Bevy's ECS exposed),
-/// this folds real vertex positions directly - simpler, and exact rather than corner-of-a-box
-/// approximate. Falls back to a small box centered on the origin when nothing is visible, so a
-/// camera can still be framed for an empty/fully-excluded scene rather than this returning
-/// `None` and pushing that case onto every caller.
+/// The world-space min/max corners spanning every vertex of every given primitive. Falls back to
+/// a small box centered on the origin when nothing is visible, so a camera can still be framed
+/// for an empty/fully-excluded scene rather than this returning `None` and pushing that case
+/// onto every caller.
 pub fn world_bounds(primitives: &[WorldPrimitive]) -> (DVec3, DVec3) {
     let mut min = DVec3::splat(f64::INFINITY);
     let mut max = DVec3::splat(f64::NEG_INFINITY);

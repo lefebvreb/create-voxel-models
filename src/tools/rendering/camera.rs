@@ -1,8 +1,7 @@
 // <ai-owned/>
 
-//! Camera framing/placement math (unchanged in substance from the old Bevy-based renderer's pure
-//! functions of the same names - they never touched Bevy) plus the new view/projection matrix
-//! and world-to-screen projection this renderer needs instead of a `bevy::Transform`.
+//! Camera framing/placement math: bounds-fitting, spherical placement around a target, and the
+//! view/projection matrix plus world-to-screen projection the rasterizer consumes.
 
 use glam::{DVec3, Mat4, Vec3, Vec4Swizzles};
 
@@ -10,7 +9,6 @@ pub const RESOLUTION: u32 = 448;
 pub const FIT_PADDING: f64 = 1.3;
 pub const MIN_RADIUS: f64 = 0.5;
 const MAX_PITCH_DEG: f64 = 89.9;
-/// Matches Bevy's `PerspectiveProjection::default().fov`, so framing looks the same as before.
 const FOV_Y_DEG: f64 = 45.0;
 
 pub fn bounds_center_radius(min: DVec3, max: DVec3) -> (DVec3, f64) {

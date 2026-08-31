@@ -2,10 +2,11 @@
 
 //! Renders a `.glb` file to PNGs - a pure-CPU rasterizer (`raster.rs`), no GPU/driver dependency,
 //! assembled from `glb`/`gltf` (reading), `scene_graph`/`animation` (world-space geometry),
-//! `camera` (projection) and `shading`/`texture` (materials). There is no programmatic
-//! `Scene.render`/`Model.render` API any more: run `python -m voxels.preview TARGET ...` on a
-//! `.glb`, or on a `.py` that builds a `scene`/`model` - [`preview_glb`] resolves that first.
-//! `crate::preview` only parses argv with `clap` and calls into here.
+//! `camera` (projection) and `shading`/`texture` (materials).
+//!
+//! The only entry point is the preview CLI: `python -m voxels.preview TARGET ...` on a `.glb`, or
+//! on a `.py` that builds a module-level `scene`/`model` - [`preview_glb`] resolves that first.
+//! `crate::preview` parses argv with `clap` and calls into here.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -92,54 +93,37 @@ fn render_frame(
     primitives: &[WorldPrimitive],
     camera: &Camera,
 ) -> Result<(u32, u32, Vec<u8>)> {
-    let screen_size = camera::RESOLUTION * SUPERSAMPLE;
-    let mut fb = Framebuffer::new(screen_size, screen_size, [0.0; 3]);
-    fb.fill_background(shading::background_gradient);
-    let mut material_cache: HashMap<u32, shading::DecodedMaterial> = HashMap::new();
+    let mut frame = Frame::new(root, bin, camera);
 
-    // No backface culling: voxel meshing only ever emits outward-facing quads (no coincident
-    // back faces exist to cull), so this is a pure perf optimization opportunity, not a
-    // correctness gap - the z-buffer already resolves occlusion correctly either way.
-    let (opaque, mut transmissive): (Vec<_>, Vec<_>) = primitives.iter().partition(|p| {
-        !root.materials[p.material as usize]
-            .extensions
-            .as_ref()
-            .is_some_and(|e| e.transmission.is_some())
-    });
+    // No backface culling: voxel meshing only ever emits outward-facing quads, so this is a perf
+    // opportunity, not a correctness gap - the z-buffer resolves occlusion either way.
+    let (opaque, transmissive): (Vec<_>, Vec<_>) = primitives.iter().partition(|p| !is_transmissive(root, p));
 
     for primitive in &opaque {
-        draw_primitive(
-            &mut fb,
-            root,
-            bin,
-            &mut material_cache,
-            primitive,
-            camera,
-            screen_size as f32,
-            false,
-        )?;
+        frame.draw(primitive, false)?;
     }
     // Back-to-front, so a transmissive fragment's background sample sees whatever's already
     // drawn behind it (the opaque scene, plus any farther transmissive layers).
-    transmissive.sort_by(|a, b| {
-        centroid_distance(b, camera.position)
-            .partial_cmp(&centroid_distance(a, camera.position))
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    for primitive in &transmissive {
-        draw_primitive(
-            &mut fb,
-            root,
-            bin,
-            &mut material_cache,
-            primitive,
-            camera,
-            screen_size as f32,
-            true,
-        )?;
+    let mut transmissive: Vec<(f32, &WorldPrimitive)> = transmissive
+        .iter()
+        .map(|&p| (centroid_distance(p, camera.position), p))
+        .collect();
+    transmissive.sort_by(|a, b| b.0.total_cmp(&a.0));
+    for (_, primitive) in &transmissive {
+        frame.draw(primitive, true)?;
     }
 
-    Ok(raster::downsample_to_srgb8(&fb, SUPERSAMPLE))
+    Ok(raster::downsample_to_srgb8(&frame.fb, SUPERSAMPLE))
+}
+
+fn is_transmissive(root: &gltf::Root, primitive: &WorldPrimitive) -> bool {
+    // `.get`, not a bare index: `collect_world_primitives` doesn't range-check `primitive.material`
+    // against `root.materials`, so a corrupt `.glb` could point past the end. An unresolved
+    // material is treated as opaque here and errors later in `decode_material` with context.
+    root.materials
+        .get(primitive.material as usize)
+        .and_then(|m| m.extensions.as_ref())
+        .is_some_and(|e| e.transmission.is_some())
 }
 
 fn centroid_distance(primitive: &WorldPrimitive, camera_pos: Vec3) -> f32 {
@@ -151,48 +135,72 @@ fn centroid_distance(primitive: &WorldPrimitive, camera_pos: Vec3) -> f32 {
     (sum / n).distance(camera_pos)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn draw_primitive(
-    fb: &mut Framebuffer,
-    root: &gltf::Root,
-    bin: &[u8],
-    material_cache: &mut HashMap<u32, shading::DecodedMaterial>,
-    primitive: &WorldPrimitive,
-    camera: &Camera,
+/// Everything one rendered frame needs: the parsed document and camera it draws from, the pixel
+/// buffer it fills, and a material-decode cache reused across every primitive in the frame.
+struct Frame<'a> {
+    root: &'a gltf::Root,
+    bin: &'a [u8],
+    camera: &'a Camera,
     screen_size: f32,
-    transmissive: bool,
-) -> Result<()> {
-    if let std::collections::hash_map::Entry::Vacant(e) = material_cache.entry(primitive.material) {
-        e.insert(
-            shading::decode_material(root, bin, primitive.material)
-                .with_context(|| format!("failed to decode material {}", primitive.material))?,
-        );
-    }
-    let material = &material_cache[&primitive.material];
+    fb: Framebuffer,
+    material_cache: HashMap<u32, shading::DecodedMaterial>,
+}
 
-    for tri in primitive.indices.as_chunks::<3>().0 {
-        let vertices: Vec<Option<ScreenVertex<8>>> = tri
-            .iter()
-            .map(|&i| screen_vertex(camera, primitive, i as usize, screen_size))
-            .collect();
-        let (Some(v0), Some(v1), Some(v2)) = (vertices[0], vertices[1], vertices[2]) else {
-            continue; // a vertex behind the camera - see raster.rs's documented policy
-        };
-        raster::rasterize_triangle(fb, v0, v1, v2, |_, _, attrs, background| {
-            let normal = Vec3::new(attrs[0], attrs[1], attrs[2]);
-            let uv = [attrs[3], attrs[4]];
-            let world_pos = Vec3::new(attrs[5], attrs[6], attrs[7]);
-            let view_dir = (camera.position - world_pos).normalize_or_zero();
-            let surface = shading::shade_opaque(material, normal, view_dir, uv);
-            let color = if transmissive {
-                shading::blend_transmission(material, surface, Vec3::from(background), normal, view_dir, uv)
-            } else {
-                surface
-            };
-            Some(color.to_array())
-        });
+impl<'a> Frame<'a> {
+    fn new(root: &'a gltf::Root, bin: &'a [u8], camera: &'a Camera) -> Self {
+        let screen_size = camera::RESOLUTION * SUPERSAMPLE;
+        let mut fb = Framebuffer::new(screen_size, screen_size, [0.0; 3]);
+        fb.fill_background(shading::background_gradient);
+        Self {
+            root,
+            bin,
+            camera,
+            screen_size: screen_size as f32,
+            fb,
+            material_cache: HashMap::new(),
+        }
     }
-    Ok(())
+
+    /// Decodes `material` on first reference, then keeps it for the rest of the frame.
+    fn cache_material(&mut self, material: u32) -> Result<()> {
+        if let std::collections::hash_map::Entry::Vacant(e) = self.material_cache.entry(material) {
+            e.insert(
+                shading::decode_material(self.root, self.bin, material)
+                    .with_context(|| format!("failed to decode material {material}"))?,
+            );
+        }
+        Ok(())
+    }
+
+    /// Rasterizes every triangle of `primitive`, shading each fragment opaque and (when
+    /// `transmissive`) compositing it against whatever is already in the framebuffer behind it.
+    fn draw(&mut self, primitive: &WorldPrimitive, transmissive: bool) -> Result<()> {
+        self.cache_material(primitive.material)?;
+        let material = &self.material_cache[&primitive.material];
+        let (camera, screen_size, fb) = (self.camera, self.screen_size, &mut self.fb);
+
+        for tri in primitive.indices.as_chunks::<3>().0 {
+            let v: [Option<ScreenVertex<8>>; 3] =
+                std::array::from_fn(|k| screen_vertex(camera, primitive, tri[k] as usize, screen_size));
+            let (Some(v0), Some(v1), Some(v2)) = (v[0], v[1], v[2]) else {
+                continue; // a vertex behind the camera - see raster.rs's documented policy
+            };
+            raster::rasterize_triangle(fb, v0, v1, v2, |_, _, attrs, background| {
+                let normal = Vec3::new(attrs[0], attrs[1], attrs[2]);
+                let uv = [attrs[3], attrs[4]];
+                let world_pos = Vec3::new(attrs[5], attrs[6], attrs[7]);
+                let view_dir = (camera.position - world_pos).normalize_or_zero();
+                let surface = shading::shade_opaque(material, normal, view_dir, uv);
+                let color = if transmissive {
+                    shading::blend_transmission(material, surface, Vec3::from(background), normal, view_dir, uv)
+                } else {
+                    surface
+                };
+                Some(color.to_array())
+            });
+        }
+        Ok(())
+    }
 }
 
 fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_size: f32) -> Option<ScreenVertex<8>> {
@@ -211,11 +219,10 @@ fn screen_vertex(camera: &Camera, primitive: &WorldPrimitive, i: usize, screen_s
 
 // --- CLI ---
 //
-// Argument *parsing* is entirely `clap`'s job now (`crate::preview::Args`, built with
-// `#[derive(Parser)]`) - by the time `preview_glb` sees an `Args`, it's already well-formed
-// (required fields present, `--angle`/`--time` already the right types). What's left is
-// resolving the target, applying the "no --angle means one default view" fallback, and running
-// the actual render, which can still fail at runtime (bad path, bad `.glb`/`.py` content, filesystem).
+// Argument parsing is `clap`'s job (`crate::preview::Args`, `#[derive(Parser)]`): by the time
+// `preview_glb` sees an `Args` it is already well-formed. What is left is resolving the target,
+// applying the "no --angle means one default view" fallback, and running the render itself, which
+// can still fail at runtime (bad path, bad `.glb`/`.py` content, filesystem).
 
 /// Resolves a preview target to glb bytes [`preview_glb`] can read: a `.glb` file is read as-is,
 /// a `.py` file is run and its scene serialized via [`scene_file_to_glb_bytes`] - entirely in
@@ -260,7 +267,7 @@ fn scene_file_to_glb_bytes(py: Python<'_>, path: &Path) -> PyResult<Vec<u8>> {
             path.display()
         ))
     })?;
-    glb::export_glb(scene)
+    Ok(glb::export_glb(scene))
 }
 
 /// Renders a preview `Args`'s target, resolving a `.py` target to glb bytes first (see

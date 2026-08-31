@@ -94,8 +94,7 @@ impl Scene {
 
     /// Export the scene to a binary glTF (`.glb`) file at `path`.
     pub fn export_glb(slf: Bound<Self>, path: PathBuf) -> PyResult<()> {
-        let blob = export_glb(slf)?;
-        write(path, blob)?;
+        write(path, export_glb(slf))?;
         Ok(())
     }
 

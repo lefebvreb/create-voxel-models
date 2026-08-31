@@ -1,22 +1,15 @@
 // <ai-owned/>
 
 //! A deliberately simple shading model - Lambertian diffuse + a hemisphere ambient gradient + a
-//! six-tone reflection cue for metals, matching the *design* of the old Bevy-based renderer's
-//! `setup_lighting`/`specular_probe_cubemap` (same colors, same intent: a neutral studio look
-//! with no self-shadowing, real material cues, authored colors rendered as authored). It is not
-//! a port of Bevy's numbers, though: `illuminance: OVERCAST_DAY` and `env_light.intensity =
-//! 1500.0` only mean what they mean inside Bevy's own exposure/EV100 pipeline, which this
-//! renderer doesn't have. [`AMBIENT_INTENSITY`]/[`DIRECTIONAL_INTENSITY`] below are placeholder
-//! brightness constants, not derived from those numbers - **retune them by eye** against a real
-//! render once this is wired up end to end; that's expected, not a bug.
+//! six-tone reflection cue for metals. The intent is a neutral studio look with no self-shadowing,
+//! real material cues, and authored colors rendered as authored. [`AMBIENT_INTENSITY`] and friends
+//! are brightness constants tuned by eye against real renders, not physical quantities.
 //!
 //! Transmission/volume follows `KHR_materials_transmission`/`KHR_materials_volume`'s reference
-//! formulas (authored thickness, Beer's law - see the renderer-rewrite plan for the verification
-//! trail), simplified to straight-through background sampling rather than a laterally-refracted
-//! ray: correct tinting/absorption, without bending the sampled background sideways. A disclosed
-//! simplification, not an oversight - full refraction would need the transmission pass to know
-//! the *screen-space* offset a bent ray would land at, which is a much bigger addition for a
-//! subtle effect at this render size.
+//! formulas (authored thickness, Beer's law), simplified to straight-through background sampling
+//! rather than a laterally-refracted ray: correct tinting/absorption, without bending the sampled
+//! background sideways. Full refraction would need the transmission pass to know the screen-space
+//! offset a bent ray would land at - a much bigger addition for a subtle effect at this size.
 
 use anyhow::{Context, Result};
 use glam::Vec3;
@@ -34,8 +27,8 @@ pub const REFLECTION_INTENSITY: f32 = 0.5;
 /// still does the form-sculpting and keeps the same face lit the same way across angles.
 pub const FILL_INTENSITY: f32 = 0.3;
 
-/// Matches `setup_lighting`'s `Transform::default().looking_to(Vec3::new(-0.5, -1.0, -0.3), ...)`
-/// - the direction the light *points*, so the direction *toward* the light is its negation.
+/// `(-0.5, -1.0, -0.3)` is the direction the key light *points*; the direction *toward* it (what
+/// the diffuse term needs) is its negation.
 fn light_direction() -> Vec3 {
     -Vec3::new(-0.5, -1.0, -0.3).normalize()
 }
@@ -56,10 +49,8 @@ pub fn background_gradient(y_frac: f32) -> [f32; 3] {
         .to_array()
 }
 
-/// One average tone per cube face (+X, -X, +Y, -Y, +Z, -Z), replacing the old renderer's
-/// checkered `specular_probe_cubemap`: its own doc comment already notes the fine checker detail
-/// "mostly blends away" on a voxel model's flat faces, and what actually reads is the per-face
-/// distinction - so a flat per-face average keeps that signal without needing a real cubemap.
+/// One flat tone per cube face (+X, -X, +Y, -Y, +Z, -Z). On a voxel model's large flat faces the
+/// per-face distinction is all that reads anyway, so a real cubemap would buy nothing here.
 const REFLECTION_TONES_SRGB: [u8; 6] = [205, 120, 220, 100, 145, 175];
 
 fn srgb_to_linear(c: f32) -> f32 {
@@ -181,10 +172,8 @@ pub fn shade_opaque(material: &DecodedMaterial, world_normal: Vec3, view_dir: Ve
     let reflection = reflection_cue(reflected) * REFLECTION_INTENSITY * (1.0 - roughness * 0.5);
     // Dielectrics (metallic=0) get only a ~4% specular weight - the common "F0=0.04" convention
     // real-time PBR shaders use for non-metals (a rough dielectric like wood or plastic reflects
-    // its environment weakly, not at full strength) - metals ramp up to the full reflection.
-    // Without this, every dielectric surface got the *same* full-strength neutral highlight added
-    // on top of its diffuse color everywhere, which read as a uniform wash rather than a subtle
-    // sheen - this was the main cause of the "overblown" look, not just the brightness constants.
+    // its environment weakly, not at full strength); metals ramp up to the full reflection.
+    // A flat full-strength highlight on every dielectric otherwise reads as a uniform wash.
     let specular_response = reflection.lerp(reflection * base_color, metallic) * metallic.max(0.04);
 
     let mut color = diffuse_response + specular_response;

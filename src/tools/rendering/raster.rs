@@ -67,9 +67,8 @@ pub struct ScreenVertex<const N: usize> {
 }
 
 /// The doubled signed area of `(v0, v1, v2)` in screen space - positive for one winding order,
-/// negative for the other. Exposed so a caller that cares about winding (e.g. to backface-cull)
-/// doesn't have to duplicate this math; [`rasterize_triangle`] itself fills either winding.
-pub fn signed_area<const N: usize>(v0: &ScreenVertex<N>, v1: &ScreenVertex<N>, v2: &ScreenVertex<N>) -> f32 {
+/// negative for the other, near zero for a degenerate triangle.
+fn signed_area<const N: usize>(v0: &ScreenVertex<N>, v1: &ScreenVertex<N>, v2: &ScreenVertex<N>) -> f32 {
     edge(v0.x, v0.y, v1.x, v1.y, v2.x, v2.y)
 }
 

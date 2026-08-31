@@ -4,10 +4,10 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::{Context, Result, bail};
 use png::ColorType;
-use pyo3::{Bound, Py, PyResult};
+use pyo3::{Bound, Py};
 
 use super::gltf;
-use super::meshing::{self, MaterialData, PaletteData};
+use super::meshing::{self, MaterialData};
 use super::utils::encode_png;
 use crate::anim::{Anim, Interpolation, Trs};
 use crate::model::Model;
@@ -15,38 +15,25 @@ use crate::palette::Palette;
 use crate::scene::{Mesh, Node, Scene};
 use crate::utils::HashPy;
 
-pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
+pub fn export_glb(scene: Bound<Scene>) -> Vec<u8> {
     let py = scene.py();
     let scene_ref = scene.borrow();
 
-    let mut root = gltf::Root::default();
-    let mut writer = BinWriter::default();
-    let mut extensions_used = BTreeSet::new();
-    let mut palette_cache: HashMap<HashPy<Palette>, Vec<u32>> = HashMap::new();
-    let mut model_cache: HashMap<HashPy<Model>, Vec<gltf::Primitive>> = HashMap::new();
-
+    let mut builder = GltfBuilder::default();
     let (mut gltf_nodes, node_index, roots) = build_nodes(py, scene_ref.nodes.values());
 
     for (node, meshes) in group_meshes_by_node(py, scene_ref.meshes.values()) {
         let mut primitives = Vec::new();
         for mesh in &meshes {
             let model = mesh.borrow(py).model.clone_ref(py);
-            primitives.extend(get_or_build_model_primitives(
-                py,
-                &model,
-                &mut model_cache,
-                &mut palette_cache,
-                &mut root,
-                &mut writer,
-                &mut extensions_used,
-            )?);
+            primitives.extend(builder.model_primitives(py, &model));
         }
         if primitives.is_empty() {
             continue;
         }
         let first = meshes[0].borrow(py);
-        let mesh_index = root.meshes.len() as u32;
-        root.meshes.push(gltf::Mesh {
+        let mesh_index = builder.root.meshes.len() as u32;
+        builder.root.meshes.push(gltf::Mesh {
             name: Some(first.name.clone()),
             primitives,
             extras: first.extras.clone(),
@@ -55,27 +42,44 @@ pub fn export_glb(scene: Bound<Scene>) -> PyResult<Vec<u8>> {
         gltf_nodes[node_idx].mesh = Some(mesh_index);
     }
 
-    root.nodes = gltf_nodes;
-    root.scenes = vec![gltf::Scene { nodes: roots }];
-    root.scene = Some(0);
+    builder.root.nodes = gltf_nodes;
+    builder.root.scenes = vec![gltf::Scene { nodes: roots }];
+    builder.root.scene = Some(0);
 
     for anim in scene_ref.anims.values() {
-        root.animations
-            .push(build_animation(py, anim, &node_index, &mut writer));
+        let animation = builder.animation(py, anim, &node_index);
+        builder.root.animations.push(animation);
     }
 
-    root.accessors = writer.accessors;
-    root.buffer_views = writer.buffer_views;
-    if !writer.bytes.is_empty() {
-        root.buffers.push(gltf::Buffer {
-            byte_length: writer.bytes.len() as u32,
-        });
-    }
-    root.extensions_used = extensions_used.into_iter().map(String::from).collect();
+    builder.finish()
+}
 
-    let json_bytes =
-        serde_json::to_vec(&root).expect("all exportable floats are validated finite at construction time");
-    Ok(write_glb_container(&json_bytes, &writer.bytes))
+/// Accumulates the glTF document, its binary buffer, and the pointer-identity dedup caches while
+/// `export_glb` walks the scene, so a model or palette reused across nodes is meshed only once.
+#[derive(Default)]
+struct GltfBuilder {
+    root: gltf::Root,
+    bin: BinWriter,
+    extensions_used: BTreeSet<&'static str>,
+    palette_cache: HashMap<HashPy<Palette>, Vec<u32>>,
+    model_cache: HashMap<HashPy<Model>, Vec<gltf::Primitive>>,
+}
+
+impl GltfBuilder {
+    /// Folds the binary buffer back into the document and frames it as a GLB container.
+    fn finish(mut self) -> Vec<u8> {
+        self.root.accessors = self.bin.accessors;
+        self.root.buffer_views = self.bin.buffer_views;
+        if !self.bin.bytes.is_empty() {
+            self.root.buffers.push(gltf::Buffer {
+                byte_length: self.bin.bytes.len() as u32,
+            });
+        }
+        self.root.extensions_used = self.extensions_used.into_iter().map(String::from).collect();
+        let json_bytes =
+            serde_json::to_vec(&self.root).expect("all exportable floats are validated finite at construction time");
+        write_glb_container(&json_bytes, &self.bin.bytes)
+    }
 }
 
 // --- Node hierarchy: `Scene.nodes` is a flat Vec with parent back-links, not a tree ---
@@ -142,246 +146,222 @@ fn group_meshes_by_node<'a>(
         .collect()
 }
 
-// --- Model/Palette dedup, keyed by pointer identity via the existing `HashPy` helper ---
+// --- Model/Palette dedup (keyed by pointer identity) and MaterialData -> glTF material ---
 
-fn get_or_build_palette_materials(
-    py: pyo3::Python,
-    palette: &Py<Palette>,
-    palette_cache: &mut HashMap<HashPy<Palette>, Vec<u32>>,
-    root: &mut gltf::Root,
-    writer: &mut BinWriter,
-    extensions_used: &mut BTreeSet<&'static str>,
-) -> PyResult<Vec<u32>> {
-    let key = HashPy(palette.clone_ref(py));
-    if let Some(indices) = palette_cache.get(&key) {
-        return Ok(indices.clone());
-    }
-    let data: PaletteData = meshing::export_palette(palette.bind(py).clone());
-    let mut indices = Vec::with_capacity(data.materials.len());
-    for material in &data.materials {
-        indices.push(build_material(material, root, writer, extensions_used)?);
-    }
-    palette_cache.insert(key, indices.clone());
-    Ok(indices)
-}
+impl GltfBuilder {
+    /// The primitives for `model`, meshed and written once then served from `model_cache`. Empty
+    /// for a hollow model (no voxels set): with no primitives referencing them, resolving its
+    /// palette to materials would only leave unreferenced materials/textures in the output.
+    fn model_primitives(&mut self, py: pyo3::Python, model: &Py<Model>) -> Vec<gltf::Primitive> {
+        let key = HashPy(model.clone_ref(py));
+        if let Some(primitives) = self.model_cache.get(&key) {
+            return primitives.clone();
+        }
+        let mesh_data = meshing::export_model(model.bind(py).clone());
+        if mesh_data.primitives.is_empty() {
+            self.model_cache.insert(key, Vec::new());
+            return Vec::new();
+        }
+        let palette = model.borrow(py).palette.clone_ref(py);
+        let material_indices = self.palette_materials(py, &palette);
 
-fn get_or_build_model_primitives(
-    py: pyo3::Python,
-    model: &Py<Model>,
-    model_cache: &mut HashMap<HashPy<Model>, Vec<gltf::Primitive>>,
-    palette_cache: &mut HashMap<HashPy<Palette>, Vec<u32>>,
-    root: &mut gltf::Root,
-    writer: &mut BinWriter,
-    extensions_used: &mut BTreeSet<&'static str>,
-) -> PyResult<Vec<gltf::Primitive>> {
-    let key = HashPy(model.clone_ref(py));
-    if let Some(primitives) = model_cache.get(&key) {
-        return Ok(primitives.clone());
-    }
-    let mesh_data = meshing::export_model(model.bind(py).clone());
-    // A hollow model (no voxels set) produces no primitives; resolving its palette into materials
-    // anyway would leave genuinely unreferenced materials/textures in the output, so skip it.
-    if mesh_data.primitives.is_empty() {
-        model_cache.insert(key, Vec::new());
-        return Ok(Vec::new());
-    }
-    let palette = model.borrow(py).palette.clone_ref(py);
-    let material_indices = get_or_build_palette_materials(py, &palette, palette_cache, root, writer, extensions_used)?;
+        let primitives: Vec<gltf::Primitive> = mesh_data
+            .primitives
+            .iter()
+            .map(|primitive| gltf::Primitive {
+                attributes: gltf::Attributes {
+                    position: self.bin.write_positions(&primitive.positions),
+                    normal: self.bin.write_normals(&primitive.normals),
+                    texcoord_0: self.bin.write_vec2s(&primitive.uvs),
+                },
+                indices: self.bin.write_indices(&primitive.indices),
+                material: material_indices[primitive.material_index],
+            })
+            .collect();
 
-    let mut primitives = Vec::with_capacity(mesh_data.primitives.len());
-    for primitive in &mesh_data.primitives {
-        let position = writer.write_positions(&primitive.positions);
-        let normal = writer.write_vec3s_no_bounds(&primitive.normals, gltf::TARGET_ARRAY_BUFFER);
-        let texcoord_0 = writer.write_vec2s(&primitive.uvs);
-        let indices = writer.write_indices(&primitive.indices);
-        primitives.push(gltf::Primitive {
-            attributes: gltf::Attributes {
-                position,
-                normal,
-                texcoord_0,
+        self.model_cache.insert(key, primitives.clone());
+        primitives
+    }
+
+    /// The material indices for `palette`'s buckets, built once then served from `palette_cache`.
+    fn palette_materials(&mut self, py: pyo3::Python, palette: &Py<Palette>) -> Vec<u32> {
+        let key = HashPy(palette.clone_ref(py));
+        if let Some(indices) = self.palette_cache.get(&key) {
+            return indices.clone();
+        }
+        let data = meshing::export_palette(palette.bind(py).clone());
+        let indices: Vec<u32> = data.materials.iter().map(|m| self.material(m)).collect();
+        self.palette_cache.insert(key, indices.clone());
+        indices
+    }
+
+    /// Bakes one `MaterialData` bucket into a glTF material plus its atlas textures, returning the
+    /// new material's index.
+    fn material(&mut self, material: &MaterialData) -> u32 {
+        let (width, height) = (material.atlas_width, material.atlas_height);
+
+        let base_color_bytes: Vec<u8> = material.base_color.iter().flatten().copied().collect();
+        let base_color_texture = self.texture(encode_png(width, height, &base_color_bytes, ColorType::Rgb));
+
+        let metallic_roughness_bytes: Vec<u8> = material
+            .metallic_roughness
+            .iter()
+            .flat_map(|&[roughness, metallic]| [0, roughness, metallic])
+            .collect();
+        let metallic_roughness_texture =
+            self.texture(encode_png(width, height, &metallic_roughness_bytes, ColorType::Rgb));
+
+        let mut extensions = gltf::MaterialExtensions::default();
+
+        if material.ior != 1.5 {
+            extensions.ior = Some(gltf::KhrMaterialsIor { ior: material.ior });
+            self.extensions_used.insert("KHR_materials_ior");
+        }
+
+        if material.transmission.iter().any(|&t| t != 0) {
+            let transmission_texture =
+                self.texture(encode_png(width, height, &material.transmission, ColorType::Grayscale));
+            extensions.transmission = Some(gltf::KhrMaterialsTransmission {
+                transmission_factor: 1.0,
+                transmission_texture: gltf::TextureInfo {
+                    index: transmission_texture,
+                },
+            });
+            self.extensions_used.insert("KHR_materials_transmission");
+        }
+
+        let (emissive_factor, emissive_texture) = if material.emissive != 0.0 {
+            extensions.emissive_strength = Some(gltf::KhrMaterialsEmissiveStrength {
+                emissive_strength: material.emissive,
+            });
+            self.extensions_used.insert("KHR_materials_emissive_strength");
+            (
+                Some([1.0, 1.0, 1.0]),
+                Some(gltf::TextureInfo {
+                    index: base_color_texture,
+                }),
+            )
+        } else {
+            (None, None)
+        };
+
+        if let Some(volume) = material.volume {
+            extensions.volume = Some(gltf::KhrMaterialsVolume {
+                thickness_factor: volume.thickness,
+                attenuation_color: [
+                    volume.color.r as f32 / 255.0,
+                    volume.color.g as f32 / 255.0,
+                    volume.color.b as f32 / 255.0,
+                ],
+                attenuation_distance: volume.distance,
+            });
+            self.extensions_used.insert("KHR_materials_volume");
+        }
+
+        let index = self.root.materials.len() as u32;
+        self.root.materials.push(gltf::Material {
+            name: None,
+            pbr_metallic_roughness: gltf::PbrMetallicRoughness {
+                base_color_texture: Some(gltf::TextureInfo {
+                    index: base_color_texture,
+                }),
+                metallic_roughness_texture: Some(gltf::TextureInfo {
+                    index: metallic_roughness_texture,
+                }),
             },
-            indices,
-            material: material_indices[primitive.material_index],
+            emissive_factor,
+            emissive_texture,
+            extensions: if extensions.is_empty() { None } else { Some(extensions) },
         });
+        index
     }
 
-    model_cache.insert(key, primitives.clone());
-    Ok(primitives)
-}
-
-// --- MaterialData -> glTF material/texture/image ---
-
-fn build_material(
-    material: &MaterialData,
-    root: &mut gltf::Root,
-    writer: &mut BinWriter,
-    extensions_used: &mut BTreeSet<&'static str>,
-) -> PyResult<u32> {
-    let width = material.atlas_width;
-    let height = material.atlas_height;
-
-    let base_color_bytes: Vec<u8> = material.base_color.iter().flatten().copied().collect();
-    let base_color_texture = push_texture(
-        root,
-        writer,
-        encode_png(width, height, &base_color_bytes, ColorType::Rgb),
-    );
-
-    let metallic_roughness_bytes: Vec<u8> = material
-        .metallic_roughness
-        .iter()
-        .flat_map(|&[roughness, metallic]| [0, roughness, metallic])
-        .collect();
-    let metallic_roughness_texture = push_texture(
-        root,
-        writer,
-        encode_png(width, height, &metallic_roughness_bytes, ColorType::Rgb),
-    );
-
-    let mut extensions = gltf::MaterialExtensions::default();
-
-    if material.ior != 1.5 {
-        extensions.ior = Some(gltf::KhrMaterialsIor { ior: material.ior });
-        extensions_used.insert("KHR_materials_ior");
-    }
-
-    if material.transmission.iter().any(|&t| t != 0) {
-        let transmission_texture = push_texture(
-            root,
-            writer,
-            encode_png(width, height, &material.transmission, ColorType::Grayscale),
-        );
-        extensions.transmission = Some(gltf::KhrMaterialsTransmission {
-            transmission_factor: 1.0,
-            transmission_texture: gltf::TextureInfo {
-                index: transmission_texture,
-            },
+    /// Embeds a PNG as an image+texture and returns the texture index. The shared atlas sampler is
+    /// pushed lazily on first use, so a texture-less scene doesn't carry an unreferenced sampler
+    /// (the glTF validator flags unused objects).
+    fn texture(&mut self, png_bytes: Vec<u8>) -> u32 {
+        if self.root.samplers.is_empty() {
+            self.root.samplers.push(gltf::Sampler {
+                mag_filter: gltf::FILTER_NEAREST,
+                min_filter: gltf::FILTER_NEAREST,
+                wrap_s: gltf::WRAP_CLAMP_TO_EDGE,
+                wrap_t: gltf::WRAP_CLAMP_TO_EDGE,
+            });
+        }
+        let buffer_view = self.bin.push_view(&png_bytes, None);
+        let image_index = self.root.images.len() as u32;
+        self.root.images.push(gltf::Image {
+            mime_type: "image/png".to_string(),
+            buffer_view,
         });
-        extensions_used.insert("KHR_materials_transmission");
-    }
-
-    let (emissive_factor, emissive_texture) = if material.emissive != 0.0 {
-        extensions.emissive_strength = Some(gltf::KhrMaterialsEmissiveStrength {
-            emissive_strength: material.emissive,
+        let texture_index = self.root.textures.len() as u32;
+        self.root.textures.push(gltf::Texture {
+            sampler: 0,
+            source: image_index,
         });
-        extensions_used.insert("KHR_materials_emissive_strength");
-        (
-            Some([1.0, 1.0, 1.0]),
-            Some(gltf::TextureInfo {
-                index: base_color_texture,
-            }),
-        )
-    } else {
-        (None, None)
-    };
-
-    if let Some(volume) = material.volume {
-        extensions.volume = Some(gltf::KhrMaterialsVolume {
-            thickness_factor: volume.thickness,
-            attenuation_color: [
-                volume.color.r as f32 / 255.0,
-                volume.color.g as f32 / 255.0,
-                volume.color.b as f32 / 255.0,
-            ],
-            attenuation_distance: volume.distance,
-        });
-        extensions_used.insert("KHR_materials_volume");
+        texture_index
     }
-
-    let index = root.materials.len() as u32;
-    root.materials.push(gltf::Material {
-        name: None,
-        pbr_metallic_roughness: gltf::PbrMetallicRoughness {
-            base_color_texture: Some(gltf::TextureInfo {
-                index: base_color_texture,
-            }),
-            metallic_roughness_texture: Some(gltf::TextureInfo {
-                index: metallic_roughness_texture,
-            }),
-        },
-        emissive_factor,
-        emissive_texture,
-        extensions: if extensions.is_empty() { None } else { Some(extensions) },
-    });
-    Ok(index)
-}
-
-/// Pushes the atlas sampler lazily, on first use: a texture-less scene should not end up with an
-/// unreferenced sampler in the output (the validator flags unused objects).
-fn push_texture(root: &mut gltf::Root, writer: &mut BinWriter, png_bytes: Vec<u8>) -> u32 {
-    if root.samplers.is_empty() {
-        root.samplers.push(gltf::Sampler {
-            mag_filter: gltf::FILTER_NEAREST,
-            min_filter: gltf::FILTER_NEAREST,
-            wrap_s: gltf::WRAP_CLAMP_TO_EDGE,
-            wrap_t: gltf::WRAP_CLAMP_TO_EDGE,
-        });
-    }
-    let buffer_view = writer.push_view(&png_bytes, None);
-    let image_index = root.images.len() as u32;
-    root.images.push(gltf::Image {
-        mime_type: "image/png".to_string(),
-        buffer_view,
-    });
-    let texture_index = root.textures.len() as u32;
-    root.textures.push(gltf::Texture {
-        sampler: 0,
-        source: image_index,
-    });
-    texture_index
 }
 
 // --- Animations ---
 
-fn build_animation(
-    py: pyo3::Python,
-    anim: &Py<Anim>,
-    node_index: &HashMap<HashPy<Node>, u32>,
-    writer: &mut BinWriter,
-) -> gltf::Animation {
-    let anim_ref = anim.borrow(py);
-    let mut channels = Vec::new();
-    let mut samplers = Vec::new();
+impl GltfBuilder {
+    fn animation(
+        &mut self,
+        py: pyo3::Python,
+        anim: &Py<Anim>,
+        node_index: &HashMap<HashPy<Node>, u32>,
+    ) -> gltf::Animation {
+        let anim_ref = anim.borrow(py);
+        let mut channels = Vec::new();
+        let mut samplers = Vec::new();
 
-    let mut nodes: Vec<(&HashPy<Node>, &Trs)> = anim_ref.nodes.iter().collect();
-    nodes.sort_by_key(|(node, _)| node_index[node]);
+        let mut nodes: Vec<(&HashPy<Node>, &Trs)> = anim_ref.nodes.iter().collect();
+        nodes.sort_by_key(|(node, _)| node_index[node]);
 
-    for (node, trs) in nodes {
-        let node_idx = node_index[node];
-        if let Some(channel) = &trs.translation {
-            push_channel(
-                &mut samplers,
-                &mut channels,
-                writer,
-                node_idx,
-                "translation",
-                channel,
-                |v| v.inner.as_vec3().to_array(),
-            );
+        for (node, trs) in nodes {
+            let node_idx = node_index[node];
+            if let Some(channel) = &trs.translation {
+                push_channel(
+                    &mut samplers,
+                    &mut channels,
+                    &mut self.bin,
+                    node_idx,
+                    "translation",
+                    channel,
+                    |v| v.inner.as_vec3().to_array(),
+                );
+            }
+            if let Some(channel) = &trs.rotation {
+                push_channel(
+                    &mut samplers,
+                    &mut channels,
+                    &mut self.bin,
+                    node_idx,
+                    "rotation",
+                    channel,
+                    |q| q.inner.as_quat().to_array(),
+                );
+            }
+            if let Some(channel) = &trs.scale {
+                push_channel(
+                    &mut samplers,
+                    &mut channels,
+                    &mut self.bin,
+                    node_idx,
+                    "scale",
+                    channel,
+                    |v| v.inner.as_vec3().to_array(),
+                );
+            }
         }
-        if let Some(channel) = &trs.rotation {
-            push_channel(
-                &mut samplers,
-                &mut channels,
-                writer,
-                node_idx,
-                "rotation",
-                channel,
-                |q| q.inner.as_quat().to_array(),
-            );
-        }
-        if let Some(channel) = &trs.scale {
-            push_channel(&mut samplers, &mut channels, writer, node_idx, "scale", channel, |v| {
-                v.inner.as_vec3().to_array()
-            });
-        }
-    }
 
-    gltf::Animation {
-        name: Some(anim_ref.name.clone()),
-        channels,
-        samplers,
-        extras: anim_ref.extras.clone(),
+        gltf::Animation {
+            name: Some(anim_ref.name.clone()),
+            channels,
+            samplers,
+            extras: anim_ref.extras.clone(),
+        }
     }
 }
 
@@ -402,7 +382,7 @@ fn push_channel<T, const N: usize>(
     }
     let input = writer.write_scalar_times(&channel.input);
     let values: Vec<[f32; N]> = channel.output.iter().map(to_array).collect();
-    let output = writer.write_floatn(&values, None);
+    let output = writer.write_floatn(&values);
 
     let interpolation = match channel.interpolation {
         None | Some(Interpolation::Linear) => None,
@@ -486,14 +466,14 @@ impl BinWriter {
         )
     }
 
-    fn write_vec3s_no_bounds(&mut self, data: &[[f32; 3]], target: u32) -> u32 {
+    fn write_normals(&mut self, data: &[[f32; 3]]) -> u32 {
         let bytes = flatten_le(data);
         self.push_accessor(
             gltf::COMPONENT_TYPE_FLOAT,
             data.len() as u32,
             "VEC3",
             &bytes,
-            Some(target),
+            Some(gltf::TARGET_ARRAY_BUFFER),
             None,
         )
     }
@@ -539,23 +519,16 @@ impl BinWriter {
     }
 
     /// Writes an animation sampler output accessor. `N` selects the glTF accessor type (3 =>
-    /// VEC3, 4 => VEC4); no bufferView `target`, since accessors used only by animation samplers
-    /// don't get one.
-    fn write_floatn<const N: usize>(&mut self, data: &[[f32; N]], target: Option<u32>) -> u32 {
+    /// VEC3 for translation/scale, 4 => VEC4 for rotation). No bufferView `target`: accessors used
+    /// only by animation samplers don't get one.
+    fn write_floatn<const N: usize>(&mut self, data: &[[f32; N]]) -> u32 {
         let type_ = match N {
             3 => "VEC3",
             4 => "VEC4",
             _ => unreachable!("animation channels are only ever VEC3 (translation/scale) or VEC4 (rotation)"),
         };
         let bytes = flatten_le(data);
-        self.push_accessor(
-            gltf::COMPONENT_TYPE_FLOAT,
-            data.len() as u32,
-            type_,
-            &bytes,
-            target,
-            None,
-        )
+        self.push_accessor(gltf::COMPONENT_TYPE_FLOAT, data.len() as u32, type_, &bytes, None, None)
     }
 }
 
@@ -767,8 +740,7 @@ pub fn decode_u32s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result
         .collect())
 }
 
-/// Decodes a VEC2 float accessor (uvs). Not consumed yet - node traversal/meshing is what reads
-/// uvs; left in now since it's the same shape as its `decode_vec3s`/`decode_vec4s` siblings.
+/// Decodes a VEC2 float accessor (uvs), read by `scene_graph` when collecting primitives.
 pub fn decode_vec2s(root: &gltf::Root, bin: &[u8], accessor_index: u32) -> Result<Vec<[f32; 2]>> {
     let flat = decode_floats(root, bin, accessor_index)?;
     Ok(flat.as_chunks::<2>().0.to_vec())
@@ -904,7 +876,7 @@ mod tests {
         let mut writer = BinWriter::default();
 
         let position = writer.write_positions(&[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]);
-        let normal = writer.write_vec3s_no_bounds(&[[0.0, 0.0, 1.0]; 3], gltf::TARGET_ARRAY_BUFFER);
+        let normal = writer.write_normals(&[[0.0, 0.0, 1.0]; 3]);
         let texcoord_0 = writer.write_vec2s(&[[0.0, 0.0]; 3]);
         let indices = writer.write_indices(&[0, 1, 2]);
 
