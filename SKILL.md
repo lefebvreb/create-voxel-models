@@ -53,10 +53,10 @@ voxels
 ├── scenes
 │   ├── furniture.py
 │   └── ...
-└── STYLE.md
+└── GUIDELINES.md
 ```
 
-`STYLE.md` holds **high-level authoring guidance only** — the decisions that keep a set of models feeling like one set, which nothing else in the project records. For example: the world scale (how many voxels to a metre), shared proportions, a common colour language, recurring motifs and how to build them, lighting/orientation conventions, naming schemes. Entries can be user- or agent-provided.
+`GUIDELINES.md` holds **high-level authoring guidance** — the decisions that keep a set of models feeling like one set, which nothing else in the project records. For example: the world scale (how many voxels to a metre), shared proportions, a common colour language, recurring motifs and how to build them, lighting/orientation conventions, naming schemes. Entries can be user- or agent-provided.
 
 Keep out of it anything already recorded elsewhere: the API (that's `references/voxels.pyi`), what materials a palette defines or what each one is for (read `palettes/*.py`), the list of existing models or their geometry (read `models/`), or how a specific model is built (its own file, with its revision comments). If you catch yourself restating code, delete it — a stale copy is worse than none.
 
